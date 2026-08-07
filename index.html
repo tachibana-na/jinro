@@ -332,10 +332,8 @@ function confirmAdvance(){
 
 /* ---------- NIGHT ---------- */
 function beginNight(){
-  const queue = ['wolf'];
-  if(aliveOfRole('seer')) queue.push('seer');
-  if(aliveOfRole('hunter')) queue.push('hunter');
-  state.night.queue = queue;
+  // 全プレイヤーが同じ手順で端末を回す(誰が特別な役職か分からないようにするため)
+  state.night.queue = alivePlayers().map(p=>p.id);
   state.night.qIdx = 0;
   state.night.phase = 'call';
   state.night.wolfTarget = null;
@@ -348,46 +346,51 @@ function beginNight(){
 function aliveOfRole(role){ return state.players.find(p=>p.alive && p.role===role); }
 
 function screenNight(){
-  const role = state.night.queue[state.night.qIdx];
+  const p = playerById(state.night.queue[state.night.qIdx]);
+  const role = p.role;
   const phase = state.night.phase;
 
   if(phase === 'call'){
-    const label = role==='wolf' ? '人狼のターン' : role==='seer' ? '占い師のターン' : '狩人のターン';
-    const msg = role==='wolf'
-      ? '人狼は互いに顔を見合わせ、この端末を囲んでください。'
-      : role==='seer'
-      ? escapeHtml(aliveOfRole('seer').name)+' さんは、他の人に見えないように端末を確認してください。'
-      : escapeHtml(aliveOfRole('hunter').name)+' さんは、他の人に見えないように端末を確認してください。';
     return `
     <div class="panel callwrap">
       ${moonMark()}
-      <div class="eyebrow">夜がふける</div>
-      <div class="who">${label}</div>
-      <div class="msg">${msg}</div>
-      <button class="btn btn-primary" onclick="nightAct()">目を覚ます</button>
+      <div class="eyebrow">夜がふける ${state.night.qIdx+1} / ${state.night.queue.length}</div>
+      <div class="who">${escapeHtml(p.name)} さんの番です</div>
+      <div class="msg">他の人に見えないように、画面を自分だけで確認してください。</div>
+      <button class="btn btn-primary" onclick="nightAct()">確認する</button>
     </div>`;
   }
 
   if(phase === 'act'){
+    if(role === 'villager'){
+      return `
+      <div class="panel callwrap">
+        <div class="eyebrow">${escapeHtml(p.name)} さんの役割</div>
+        <div class="who">あなたに指示はありません</div>
+        <div class="msg">生存者は ${alivePlayers().length} 人です。ボタンを押して端末を次の人に渡してください。</div>
+        <button class="btn btn-primary" onclick="nightConfirmAct()">私は村人</button>
+      </div>`;
+    }
     if(role === 'wolf'){
-      const targets = alivePlayers().filter(p=>p.role!=='wolf');
-      const rows = targets.map(p=>`
-        <div class="pbtn ${state.night.wolfTarget===p.id?'selected':''}" onclick="pick('wolfTarget', ${p.id})">
-          <span>${escapeHtml(p.name)}</span>
+      const targets = alivePlayers().filter(q=>q.role!=='wolf');
+      const rows = targets.map(q=>`
+        <div class="pbtn ${state.night.wolfTarget===q.id?'selected':''}" onclick="pick('wolfTarget', ${q.id})">
+          <span>${escapeHtml(q.name)}</span>
         </div>`).join('');
       return `
       <div class="panel">
         <div class="eyebrow">人狼の襲撃先</div>
         <h3>誰を襲いますか?</h3>
+        <p class="hint">他の人狼がいる場合は、この端末を一緒に見て相談してください。</p>
         <div class="playergrid">${rows}</div>
         <button class="btn btn-danger" ${state.night.wolfTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">この人を襲う</button>
       </div>`;
     }
     if(role === 'seer'){
-      const targets = alivePlayers().filter(p=>p.role!=='seer');
-      const rows = targets.map(p=>`
-        <div class="pbtn ${state.night.seerTarget===p.id?'selected':''}" onclick="pick('seerTarget', ${p.id})">
-          <span>${escapeHtml(p.name)}</span>
+      const targets = alivePlayers().filter(q=>q.role!=='seer');
+      const rows = targets.map(q=>`
+        <div class="pbtn ${state.night.seerTarget===q.id?'selected':''}" onclick="pick('seerTarget', ${q.id})">
+          <span>${escapeHtml(q.name)}</span>
         </div>`).join('');
       return `
       <div class="panel">
@@ -399,10 +402,10 @@ function screenNight(){
     }
     // hunter
     const targets = alivePlayers();
-    const rows = targets.map(p=>`
-      <div class="pbtn ${state.night.hunterTarget===p.id?'selected':''}" onclick="pick('hunterTarget', ${p.id})">
-        <span>${escapeHtml(p.name)}</span>
-        ${state.lastHunterProtect===p.id ? '<span class="tag">前回護衛</span>':''}
+    const rows = targets.map(q=>`
+      <div class="pbtn ${state.night.hunterTarget===q.id?'selected':''}" onclick="pick('hunterTarget', ${q.id})">
+        <span>${escapeHtml(q.name)}</span>
+        ${state.lastHunterProtect===q.id ? '<span class="tag">前回護衛</span>':''}
       </div>`).join('');
     return `
     <div class="panel">
@@ -429,12 +432,12 @@ function screenNight(){
         <button class="btn btn-primary" onclick="nightPass()">確認した。画面を伏せる</button>
       </div>`;
     }
-    // wolf / hunter have no visible result screen, just confirmation
-    const label = role==='wolf' ? '襲撃先を決めた' : '護衛先を決めた';
+    // villager / wolf / hunter は同じ見た目の確認画面(誰が何をしたか分からないようにする)
+    const label = role==='wolf' ? '選択を決めた' : role==='hunter' ? '選択を決めた' : '確認した';
     return `
     <div class="panel callwrap">
       <div class="who">${label}</div>
-      <div class="msg">この選択は誰にも明かさないでください。</div>
+      <div class="msg">この画面の内容は誰にも明かさないでください。</div>
       <button class="btn btn-primary" onclick="nightPass()">画面を伏せる</button>
     </div>`;
   }
@@ -442,15 +445,14 @@ function screenNight(){
   // phase === 'pass'
   const nextIdx = state.night.qIdx+1;
   const hasNext = nextIdx < state.night.queue.length;
-  const nextRole = hasNext ? state.night.queue[nextIdx] : null;
-  const nextLabel = nextRole==='wolf' ? '人狼' : nextRole==='seer' ? '占い師' : nextRole==='hunter' ? '狩人' : null;
+  const nextName = hasNext ? escapeHtml(playerById(state.night.queue[nextIdx]).name) : null;
   return `
   <div class="panel callwrap">
     ${moonMark()}
     <div class="eyebrow">受け渡し</div>
     <div class="who">画面を伏せてください</div>
-    <div class="msg">${hasNext ? '次は '+nextLabel+' の番です。端末を回してください。' : '夜が明けます。全員に画面を見せてください。'}</div>
-    <button class="btn btn-primary" onclick="nightAdvance()">${hasNext ? '次へ' : '朝を迎える'}</button>
+    <div class="msg">${hasNext ? '次は '+nextName+' さんに端末を渡してください。' : '全員の確認が終わりました。夜が明けます。'}</div>
+    <button class="btn btn-primary" onclick="nightAdvance()">${hasNext ? '渡したら次へ' : '朝を迎える'}</button>
   </div>`;
 }
 function pick(field, id){ state.night[field] = id; render(); }
