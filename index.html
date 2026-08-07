@@ -158,7 +158,18 @@ const ROLES = {
 };
 
 function calcWolfCount(n){ return Math.max(1, Math.floor(n/4)); }
-function maxWolfCount(n){ return Math.max(1, Math.floor(n/2) - 1); }
+// 人狼・占い師・狩人の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
+function clampRoleCounts(n, wolf, seer, hunter){
+  wolf = Math.max(1, wolf);
+  seer = Math.max(0, seer);
+  hunter = Math.max(0, hunter);
+  let total = wolf + seer + hunter;
+  // 超過分は 狩人→占い師→人狼(1人は残す) の順に削る
+  while(total > n && hunter > 0){ hunter--; total--; }
+  while(total > n && seer > 0){ seer--; total--; }
+  while(total > n && wolf > 1){ wolf--; total--; }
+  return {wolf, seer, hunter};
+}
 
 /* ---------- state ---------- */
 let state = null;
@@ -168,11 +179,13 @@ function freshSetup(){
     screen:'setup',
     n,
     wolfCount: calcWolfCount(n),
+    seerCount: 1,
+    hunterCount: 1,
     names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     players: [],
     confirmIdx:0,
     confirmPhase:'call',
-    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null },
+    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null },
     lastHunterProtect:null,
     lastVictim:null,
     voteIdx:0,
@@ -231,13 +244,27 @@ function screenSetup(){
       <button onclick="changeN(1)">+</button>
     </div>
 
-    <label>人狼の人数(村人・占い師・狩人は必ず1人以上含まれます)</label>
+    <label>人狼の人数</label>
     <div class="stepper">
-      <button onclick="changeWolf(-1)">−</button>
+      <button onclick="changeRole('wolf',-1)">−</button>
       <div class="val">${state.wolfCount}</div>
-      <button onclick="changeWolf(1)">+</button>
+      <button onclick="changeRole('wolf',1)">+</button>
     </div>
-    <p class="hint">村人 ${state.n - state.wolfCount - 2}人 ・ 占い師 1人 ・ 狩人 1人 ・ 人狼 ${state.wolfCount}人</p>
+
+    <label>占い師の人数</label>
+    <div class="stepper">
+      <button onclick="changeRole('seer',-1)">−</button>
+      <div class="val">${state.seerCount}</div>
+      <button onclick="changeRole('seer',1)">+</button>
+    </div>
+
+    <label>狩人の人数</label>
+    <div class="stepper">
+      <button onclick="changeRole('hunter',-1)">−</button>
+      <div class="val">${state.hunterCount}</div>
+      <button onclick="changeRole('hunter',1)">+</button>
+    </div>
+    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 人狼 ${state.wolfCount}人</p>
 
     <label>参加者の名前</label>
     <div class="namegrid">${names}</div>
@@ -254,22 +281,27 @@ function changeN(d){
   } else {
     state.names = state.names.slice(0,n);
   }
-  state.wolfCount = Math.min(state.wolfCount, maxWolfCount(n));
-  state.wolfCount = Math.max(1, state.wolfCount);
+  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount);
+  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter;
   render();
 }
-function changeWolf(d){
-  const w = Math.min(maxWolfCount(state.n), Math.max(1, state.wolfCount + d));
-  state.wolfCount = w;
+function changeRole(role, d){
+  const w = state.wolfCount + (role==='wolf'?d:0);
+  const s = state.seerCount + (role==='seer'?d:0);
+  const h = state.hunterCount + (role==='hunter'?d:0);
+  if(w < 1 || s < 0 || h < 0) return;
+  if(w + s + h > state.n) return;
+  state.wolfCount = w; state.seerCount = s; state.hunterCount = h;
   render();
 }
 function setName(i,v){ state.names[i] = v; }
 
 function startGame(){
-  const n = state.n, w = state.wolfCount;
+  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount;
   const roles = [];
   for(let i=0;i<w;i++) roles.push('wolf');
-  roles.push('seer','hunter');
+  for(let i=0;i<s;i++) roles.push('seer');
+  for(let i=0;i<h;i++) roles.push('hunter');
   while(roles.length < n) roles.push('villager');
   shuffle(roles);
   state.players = state.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role: roles[i], alive:true}));
@@ -340,6 +372,7 @@ function beginNight(){
   state.night.seerTarget = null;
   state.night.seerResult = null;
   state.night.hunterTarget = null;
+  state.night.villagerDummy = null;
   state.screen = 'night';
   render();
 }
@@ -363,12 +396,18 @@ function screenNight(){
 
   if(phase === 'act'){
     if(role === 'villager'){
+      const targets = alivePlayers().filter(q=>q.id!==p.id);
+      const rows = targets.map(q=>`
+        <div class="pbtn ${state.night.villagerDummy===q.id?'selected':''}" onclick="pick('villagerDummy', ${q.id})">
+          <span>${escapeHtml(q.name)}</span>
+        </div>`).join('');
       return `
-      <div class="panel callwrap">
-        <div class="eyebrow">${escapeHtml(p.name)} さんの役割</div>
-        <div class="who">あなたに指示はありません</div>
-        <div class="msg">生存者は ${alivePlayers().length} 人です。ボタンを押して端末を次の人に渡してください。</div>
-        <button class="btn btn-primary" onclick="nightConfirmAct()">私は村人</button>
+      <div class="panel">
+        <div class="eyebrow">村人の夜</div>
+        <h3>誰かを選んでください</h3>
+        <p class="hint">あなたは村人です。この選択に意味はありません。誰でもよいので一人選んで進んでください。</p>
+        <div class="playergrid">${rows}</div>
+        <button class="btn btn-primary" ${state.night.villagerDummy===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">決定</button>
       </div>`;
     }
     if(role === 'wolf'){
@@ -464,6 +503,7 @@ function nightAdvance(){
   if(nextIdx < state.night.queue.length){
     state.night.qIdx = nextIdx;
     state.night.phase = 'call';
+    state.night.villagerDummy = null; // 村人の選択は演技用なので毎回リセット
     render();
   } else {
     resolveNight();
