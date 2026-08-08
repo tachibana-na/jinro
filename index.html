@@ -129,7 +129,8 @@ input[type=text]:focus{outline:1px solid var(--mist);}
   cursor:pointer;
 }
 .pbtn.selected{border-color:var(--amber); background:rgba(217,164,65,0.14);}
-.pbtn.dead{opacity:0.35; text-decoration:line-through;}
+.pbtn.dead{opacity:0.35; text-decoration:line-through; pointer-events:none; cursor:default;}
+.pbtn.locked{opacity:0.4; pointer-events:none; cursor:default;}
 .pbtn .tag{font-size:11px; color:var(--silver-dim);}
 
 .badge{display:inline-block; padding:3px 10px; border-radius:999px; font-size:11px; letter-spacing:0.08em; border:1px solid var(--line); color:var(--silver-dim);}
@@ -304,7 +305,7 @@ function startGame(){
   for(let i=0;i<h;i++) roles.push('hunter');
   while(roles.length < n) roles.push('villager');
   shuffle(roles);
-  state.players = state.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role: roles[i], alive:true}));
+  state.players = state.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role: roles[i], alive:true, deathCause:null}));
   state.confirmIdx = 0;
   state.confirmPhase = 'call';
   state.screen = 'confirm';
@@ -396,11 +397,8 @@ function screenNight(){
 
   if(phase === 'act'){
     if(role === 'villager'){
-      const targets = alivePlayers().filter(q=>q.id!==p.id);
-      const rows = targets.map(q=>`
-        <div class="pbtn ${state.night.villagerDummy===q.id?'selected':''}" onclick="pick('villagerDummy', ${q.id})">
-          <span>${escapeHtml(q.name)}</span>
-        </div>`).join('');
+      const targets = state.players.filter(q=>q.id!==p.id);
+      const rows = targets.map(q=>targetRow(q, state.night.villagerDummy, `pick('villagerDummy', ${q.id})`, null)).join('');
       return `
       <div class="panel">
         <div class="eyebrow">村人の夜</div>
@@ -411,26 +409,23 @@ function screenNight(){
       </div>`;
     }
     if(role === 'wolf'){
-      const targets = alivePlayers().filter(q=>q.role!=='wolf');
-      const rows = targets.map(q=>`
-        <div class="pbtn ${state.night.wolfTarget===q.id?'selected':''}" onclick="pick('wolfTarget', ${q.id})">
-          <span>${escapeHtml(q.name)}</span>
-        </div>`).join('');
+      const targets = state.players.filter(q=>q.id!==p.id);
+      const rows = targets.map(q=>{
+        const disabledReason = (q.alive && q.role==='wolf') ? '人狼' : null;
+        return targetRow(q, state.night.wolfTarget, `pick('wolfTarget', ${q.id})`, disabledReason);
+      }).join('');
       return `
       <div class="panel">
         <div class="eyebrow">人狼の襲撃先</div>
         <h3>誰を襲いますか?</h3>
-        <p class="hint">他の人狼がいる場合は、この端末を一緒に見て相談してください。</p>
+        <p class="hint">あなたより先に他の人狼が襲撃先を選んでいれば、それに従うか襲撃先を変えることが出来ます。最後の人狼が選んだプレイヤーを襲撃します。</p>
         <div class="playergrid">${rows}</div>
         <button class="btn btn-danger" ${state.night.wolfTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">この人を襲う</button>
       </div>`;
     }
     if(role === 'seer'){
-      const targets = alivePlayers().filter(q=>q.role!=='seer');
-      const rows = targets.map(q=>`
-        <div class="pbtn ${state.night.seerTarget===q.id?'selected':''}" onclick="pick('seerTarget', ${q.id})">
-          <span>${escapeHtml(q.name)}</span>
-        </div>`).join('');
+      const targets = state.players.filter(q=>q.id!==p.id);
+      const rows = targets.map(q=>targetRow(q, state.night.seerTarget, `pick('seerTarget', ${q.id})`, null)).join('');
       return `
       <div class="panel">
         <div class="eyebrow">占い師の力</div>
@@ -439,13 +434,11 @@ function screenNight(){
         <button class="btn btn-primary" ${state.night.seerTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">占う</button>
       </div>`;
     }
-    // hunter
-    const targets = alivePlayers();
-    const rows = targets.map(q=>`
-      <div class="pbtn ${state.night.hunterTarget===q.id?'selected':''}" onclick="pick('hunterTarget', ${q.id})">
-        <span>${escapeHtml(q.name)}</span>
-        ${state.lastHunterProtect===q.id ? '<span class="tag">前回護衛</span>':''}
-      </div>`).join('');
+    // hunter(自分自身も対象に含む)
+    const rows = state.players.map(q=>{
+      const note = state.lastHunterProtect===q.id ? '前回護衛' : null;
+      return targetRow(q, state.night.hunterTarget, `pick('hunterTarget', ${q.id})`, null, note);
+    }).join('');
     return `
     <div class="panel">
       <div class="eyebrow">狩人の力</div>
@@ -495,6 +488,21 @@ function screenNight(){
   </div>`;
 }
 function pick(field, id){ state.night[field] = id; render(); }
+function deathStatus(q){ return q.deathCause==='executed' ? '追放' : '死亡'; }
+function targetRow(q, selectedId, onclickJs, disabledReason, note){
+  let status = null, disabled = false;
+  if(!q.alive){ status = deathStatus(q); disabled = true; }
+  else if(disabledReason){ status = disabledReason; disabled = true; }
+  const cls = ['pbtn'];
+  if(disabled) cls.push(q.alive ? 'locked' : 'dead');
+  if(!disabled && selectedId===q.id) cls.push('selected');
+  const onclickAttr = disabled ? '' : ` onclick="${onclickJs}"`;
+  const tag = status ? `<span class="tag">${status}</span>` : (!disabled && note ? `<span class="tag">${note}</span>` : '');
+  return `<div class="${cls.join(' ')}"${onclickAttr}>
+    <span>${escapeHtml(q.name)}</span>
+    ${tag}
+  </div>`;
+}
 function nightAct(){ state.night.phase = 'act'; render(); }
 function nightConfirmAct(){ state.night.phase = 'result'; render(); }
 function nightPass(){ state.night.phase = 'pass'; render(); }
@@ -517,7 +525,7 @@ function resolveNight(){
     victimId = wolfTarget;
   }
   state.lastVictim = victimId;
-  if(victimId !== null){ playerById(victimId).alive = false; }
+  if(victimId !== null){ const v = playerById(victimId); v.alive = false; v.deathCause = 'killed'; }
   state.lastHunterProtect = hunterTarget;
   state.screen = 'morning';
   render();
@@ -562,11 +570,8 @@ function beginVote(){
 function screenVote(){
   const voterId = state.voteQueueIds[state.voteIdx];
   const voter = playerById(voterId);
-  const targets = alivePlayers().filter(p=>p.id !== voterId);
-  const rows = targets.map(p=>`
-    <div class="pbtn ${state.votes[voterId]===p.id?'selected':''}" onclick="castVote(${voterId}, ${p.id})">
-      <span>${escapeHtml(p.name)}</span>
-    </div>`).join('');
+  const targets = state.players.filter(p=>p.id !== voterId);
+  const rows = targets.map(p=>targetRow(p, state.votes[voterId], `castVote(${voterId}, ${p.id})`, null)).join('');
   return `
   <div class="panel">
     <div class="eyebrow">話し合い・投票 ${state.voteIdx+1} / ${state.voteQueueIds.length}</div>
@@ -597,7 +602,7 @@ function resolveVote(){
   state.tieNote = leaders.length > 1;
   const executedId = leaders.length ? leaders[Math.floor(Math.random()*leaders.length)] : null;
   state.lastExecuted = executedId;
-  if(executedId !== null){ playerById(executedId).alive = false; }
+  if(executedId !== null){ const e = playerById(executedId); e.alive = false; e.deathCause = 'executed'; }
   state.screen = 'execution';
   render();
 }
