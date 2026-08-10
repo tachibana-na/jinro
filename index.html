@@ -16,6 +16,7 @@
   --blood-bright:#d64430;
   --amber:#d9a441;
   --mist:#6f93c9;
+  --emerald:#6fcf97;
   --line:rgba(205,214,229,0.12);
   --font-display:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
   --font-body:"Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;
@@ -138,6 +139,7 @@ input[type=text]:focus{outline:1px solid var(--mist);}
 .badge.villager{color:var(--amber); border-color:rgba(217,164,65,0.4); background:rgba(217,164,65,0.08);}
 .badge.seer{color:var(--mist); border-color:rgba(111,147,201,0.4); background:rgba(111,147,201,0.08);}
 .badge.hunter{color:var(--silver); border-color:var(--line); background:rgba(205,214,229,0.06);}
+.badge.president{color:var(--emerald); border-color:rgba(111,207,151,0.45); background:rgba(111,207,151,0.09);}
 
 .divider{height:1px; background:var(--line); margin:20px 0;}
 .resultlist{display:flex; flex-direction:column; gap:8px; margin:12px 0 6px;}
@@ -155,21 +157,24 @@ const ROLES = {
   wolf:     {name:'人狼',   emoji:'🐺', cls:'wolf',     desc:'夜、他の人狼と目を見交わし、村人を一人選んで襲撃する。正体を最後まで隠し通せ。'},
   villager: {name:'村人',   emoji:'👤', cls:'villager', desc:'特別な力はない。話し合いと観察だけを頼りに、人狼を見つけ出せ。'},
   seer:     {name:'占い師', emoji:'🔮', cls:'seer',     desc:'夜ごとに一人を選び、その者が人狼かどうかを見抜くことができる。'},
-  hunter:   {name:'狩人',   emoji:'🛡️', cls:'hunter',   desc:'夜ごとに一人を選び、人狼の凶刃から守ることができる。'}
+  hunter:   {name:'狩人',   emoji:'🛡️', cls:'hunter',   desc:'夜ごとに一人を選び、人狼の凶刃から守ることができる。'},
+  president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'}
 };
 
 function calcWolfCount(n){ return Math.max(1, Math.floor(n/4)); }
-// 人狼・占い師・狩人の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
-function clampRoleCounts(n, wolf, seer, hunter){
+// 人狼・占い師・狩人・社長の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
+function clampRoleCounts(n, wolf, seer, hunter, president){
   wolf = Math.max(1, wolf);
   seer = Math.max(0, seer);
   hunter = Math.max(0, hunter);
-  let total = wolf + seer + hunter;
-  // 超過分は 狩人→占い師→人狼(1人は残す) の順に削る
+  president = Math.min(1, Math.max(0, president));
+  let total = wolf + seer + hunter + president;
+  // 超過分は 狩人→占い師→社長→人狼(1人は残す) の順に削る
   while(total > n && hunter > 0){ hunter--; total--; }
   while(total > n && seer > 0){ seer--; total--; }
+  while(total > n && president > 0){ president--; total--; }
   while(total > n && wolf > 1){ wolf--; total--; }
-  return {wolf, seer, hunter};
+  return {wolf, seer, hunter, president};
 }
 
 /* ---------- state ---------- */
@@ -182,6 +187,7 @@ function freshSetup(){
     wolfCount: calcWolfCount(n),
     seerCount: 1,
     hunterCount: 1,
+    presidentCount: 0,
     names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     players: [],
     confirmIdx:0,
@@ -194,6 +200,7 @@ function freshSetup(){
     votes:{},
     lastExecuted:null,
     tieNote:false,
+    executionNote:null,
     winner:null
   };
 }
@@ -265,7 +272,14 @@ function screenSetup(){
       <div class="val">${state.hunterCount}</div>
       <button onclick="changeRole('hunter',1)">+</button>
     </div>
-    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 人狼 ${state.wolfCount}人</p>
+
+    <label>社長の人数(0〜1人)</label>
+    <div class="stepper">
+      <button onclick="changeRole('president',-1)">−</button>
+      <div class="val">${state.presidentCount}</div>
+      <button onclick="changeRole('president',1)">+</button>
+    </div>
+    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 人狼 ${state.wolfCount}人</p>
 
     <label>参加者の名前</label>
     <div class="namegrid">${names}</div>
@@ -282,27 +296,29 @@ function changeN(d){
   } else {
     state.names = state.names.slice(0,n);
   }
-  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount);
-  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter;
+  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount);
+  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president;
   render();
 }
 function changeRole(role, d){
   const w = state.wolfCount + (role==='wolf'?d:0);
   const s = state.seerCount + (role==='seer'?d:0);
   const h = state.hunterCount + (role==='hunter'?d:0);
-  if(w < 1 || s < 0 || h < 0) return;
-  if(w + s + h > state.n) return;
-  state.wolfCount = w; state.seerCount = s; state.hunterCount = h;
+  const pr = state.presidentCount + (role==='president'?d:0);
+  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1) return;
+  if(w + s + h + pr > state.n) return;
+  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr;
   render();
 }
 function setName(i,v){ state.names[i] = v; }
 
 function startGame(){
-  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount;
+  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount;
   const roles = [];
   for(let i=0;i<w;i++) roles.push('wolf');
   for(let i=0;i<s;i++) roles.push('seer');
   for(let i=0;i<h;i++) roles.push('hunter');
+  for(let i=0;i<pr;i++) roles.push('president');
   while(roles.length < n) roles.push('villager');
   shuffle(roles);
   state.players = state.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role: roles[i], alive:true, deathCause:null}));
@@ -396,14 +412,14 @@ function screenNight(){
   }
 
   if(phase === 'act'){
-    if(role === 'villager'){
+    if(role === 'villager' || role === 'president'){
       const targets = state.players.filter(q=>q.id!==p.id);
       const rows = targets.map(q=>targetRow(q, state.night.villagerDummy, `pick('villagerDummy', ${q.id})`, null)).join('');
       return `
       <div class="panel">
-        <div class="eyebrow">村人の夜</div>
+        <div class="eyebrow">夜の行動</div>
         <h3>誰かを選んでください</h3>
-        <p class="hint">あなたは村人です。この選択に意味はありません。誰でもよいので一人選んで進んでください。</p>
+        <p class="hint">あなたには特別な夜の行動はありません。この選択に意味はありません。誰でもよいので一人選んで進んでください。</p>
         <div class="playergrid">${rows}</div>
         <button class="btn btn-primary" ${state.night.villagerDummy===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">決定</button>
       </div>`;
@@ -600,8 +616,22 @@ function resolveVote(){
     else if(c === max){ leaders.push(id); }
   });
   state.tieNote = leaders.length > 1;
-  const executedId = leaders.length ? leaders[Math.floor(Math.random()*leaders.length)] : null;
+
+  // 社長ルール: 最多得票が社長単独ならそのまま社長が追放される。
+  // そうでなければ、票数にかかわらず社長が投票したプレイヤーが追放される。
+  const president = state.players.find(p=>p.alive && p.role==='president');
+  let executedId = null;
+  let executionNote = null;
+  if(president && !(leaders.length===1 && leaders[0]===president.id)){
+    const target = state.votes[president.id];
+    executedId = (target !== undefined) ? target : (leaders.length ? leaders[Math.floor(Math.random()*leaders.length)] : null);
+    executionNote = 'president';
+  } else if(leaders.length){
+    executedId = leaders[Math.floor(Math.random()*leaders.length)];
+  }
+
   state.lastExecuted = executedId;
+  state.executionNote = executionNote;
   if(executedId !== null){ const e = playerById(executedId); e.alive = false; e.deathCause = 'executed'; }
   state.screen = 'execution';
   render();
@@ -617,7 +647,7 @@ function screenExecution(){
     ${p ? `
       <div class="who">${escapeHtml(p.name)} さん</div>
       <div class="msg">村の裁きにより、追放されました。</div>
-      ${state.tieNote ? '<div class="hint">※ 同数票のため、抽選で決定しました。</div>' : ''}
+      ${state.executionNote==='president' ? '<div class="hint">※ 社長の指名により追放が決定しました。</div>' : (state.tieNote ? '<div class="hint">※ 同数票のため、抽選で決定しました。</div>' : '')}
       <div class="badge ${r.cls}" style="margin-top:6px;">${r.emoji} ${r.name} だった</div>
     ` : `<div class="who">追放者なし</div><div class="msg">票が入りませんでした。</div>`}
     <button class="btn btn-primary" style="margin-top:24px;" onclick="afterExecution()">続ける</button>
