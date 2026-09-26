@@ -17,6 +17,7 @@
   --amber:#d9a441;
   --mist:#6f93c9;
   --emerald:#6fcf97;
+  --teal:#5fb8b3;
   --line:rgba(205,214,229,0.12);
   --font-display:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
   --font-body:"Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;
@@ -140,6 +141,25 @@ input[type=text]:focus{outline:1px solid var(--mist);}
 .badge.seer{color:var(--mist); border-color:rgba(111,147,201,0.4); background:rgba(111,147,201,0.08);}
 .badge.hunter{color:var(--silver); border-color:var(--line); background:rgba(205,214,229,0.06);}
 .badge.president{color:var(--emerald); border-color:rgba(111,207,151,0.45); background:rgba(111,207,151,0.09);}
+.badge.medium{color:var(--teal); border-color:rgba(95,184,179,0.45); background:rgba(95,184,179,0.09);}
+.badge.paparazzi{color:#ffb3a4; border-color:rgba(214,68,48,0.5); background:rgba(214,68,48,0.1);}
+
+.chipwrap{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;}
+.chip{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--bg-panel-lighter); border:1px solid var(--line); font-size:13px;}
+.chip .x{cursor:pointer; color:var(--silver-dim);}
+.backlink{display:inline-block; background:none; border:none; color:var(--silver-dim); font-size:12px; cursor:pointer; margin-bottom:16px; padding:0; font-family:var(--font-body);}
+.menubtn{text-align:left;}
+.menubtn .sub{display:block; font-size:12px; font-weight:400; color:rgba(255,255,255,0.75); margin-top:2px;}
+.barrow{margin-bottom:14px;}
+.barrow .bartrack{height:10px; border-radius:6px; background:var(--bg-panel-lighter); overflow:hidden;}
+.barrow .barfill{height:100%; border-radius:6px; background:linear-gradient(90deg, var(--mist), #4c6ea3);}
+textarea{
+  width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line);
+  background:var(--bg-panel-lighter); color:var(--silver); font-size:15px; font-family:var(--font-body); resize:vertical;
+}
+textarea:focus{outline:1px solid var(--mist);}
+@keyframes popIn{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
+.pop-in{animation:popIn .4s cubic-bezier(.2,1.4,.4,1) both;}
 
 .divider{height:1px; background:var(--line); margin:20px 0;}
 .resultlist{display:flex; flex-direction:column; gap:8px; margin:12px 0 6px;}
@@ -158,26 +178,33 @@ const ROLES = {
   villager: {name:'村人',   emoji:'👤', cls:'villager', desc:'特別な力はない。話し合いと観察だけを頼りに、人狼を見つけ出せ。'},
   seer:     {name:'占い師', emoji:'🔮', cls:'seer',     desc:'夜ごとに一人を選び、その者が人狼かどうかを見抜くことができる。'},
   hunter:   {name:'狩人',   emoji:'🛡️', cls:'hunter',   desc:'夜ごとに一人を選び、人狼の凶刃から守ることができる。'},
-  president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'}
+  president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'},
+  medium:   {name:'霊媒師', emoji:'👁️', cls:'medium',   desc:'追放されたプレイヤーが人狼だったかどうかを、次の投票が始まる前にひとりだけ知ることができる。'},
+  paparazzi:{name:'パパラッチ', emoji:'📸', cls:'paparazzi', desc:'占い師のように誰かの正体を夜ごとに調べられるが、あなたは人狼陣営に属している。占いでは人狼だと見抜かれない。'}
 };
 
 function calcWolfCount(n){ return Math.max(1, Math.floor(n/4)); }
-// 人狼・占い師・狩人・社長の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
-function clampRoleCounts(n, wolf, seer, hunter, president){
+// 各役職の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
+function clampRoleCounts(n, wolf, seer, hunter, president, medium, paparazzi){
   wolf = Math.max(1, wolf);
   seer = Math.max(0, seer);
   hunter = Math.max(0, hunter);
   president = Math.min(1, Math.max(0, president));
-  let total = wolf + seer + hunter + president;
-  // 超過分は 狩人→占い師→社長→人狼(1人は残す) の順に削る
+  medium = Math.max(0, medium);
+  paparazzi = Math.max(0, paparazzi);
+  let total = wolf + seer + hunter + president + medium + paparazzi;
+  // 超過分は パパラッチ→霊媒師→狩人→占い師→社長→人狼(1人は残す) の順に削る
+  while(total > n && paparazzi > 0){ paparazzi--; total--; }
+  while(total > n && medium > 0){ medium--; total--; }
   while(total > n && hunter > 0){ hunter--; total--; }
   while(total > n && seer > 0){ seer--; total--; }
   while(total > n && president > 0){ president--; total--; }
   while(total > n && wolf > 1){ wolf--; total--; }
-  return {wolf, seer, hunter, president};
+  return {wolf, seer, hunter, president, medium, paparazzi};
 }
 
 /* ---------- state ---------- */
+let appMode = 'top'; // top | jinro | lottery | survey_choice | survey_free
 let state = null;
 function freshSetup(){
   const n = 8;
@@ -188,11 +215,13 @@ function freshSetup(){
     seerCount: 1,
     hunterCount: 1,
     presidentCount: 0,
+    mediumCount: 1,
+    paparazziCount: 0,
     names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     players: [],
     confirmIdx:0,
     confirmPhase:'call',
-    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null },
+    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null, paparazziTarget:null },
     lastHunterProtect:null,
     lastVictim:null,
     voteIdx:0,
@@ -201,32 +230,61 @@ function freshSetup(){
     lastExecuted:null,
     tieNote:false,
     executionNote:null,
+    pendingMediumReveal:null,
+    mediumPhase:'call',
     winner:null
   };
 }
 state = freshSetup();
 
 function alivePlayers(){ return state.players.filter(p=>p.alive); }
-function aliveWolves(){ return alivePlayers().filter(p=>p.role==='wolf'); }
+function aliveWolfSide(){ return alivePlayers().filter(p=>p.role==='wolf' || p.role==='paparazzi'); }
 function playerById(id){ return state.players.find(p=>p.id===id); }
 
 /* ---------- render dispatch ---------- */
 function render(){
   const app = document.getElementById('app');
   let html = '';
-  switch(state.screen){
-    case 'setup': html = screenSetup(); break;
-    case 'confirm': html = screenConfirm(); break;
-    case 'night': html = screenNight(); break;
-    case 'morning': html = screenMorning(); break;
-    case 'day_vote': html = screenVote(); break;
-    case 'execution': html = screenExecution(); break;
-    case 'gameover': html = screenGameOver(); break;
-    default: html = screenSetup();
-  }
+  if(appMode === 'top'){ html = screenTop(); }
+  else if(appMode === 'lottery'){ html = renderLotteryScreen(); }
+  else if(appMode === 'survey_choice'){ html = renderSurveyChoiceScreen(); }
+  else if(appMode === 'survey_free'){ html = renderSurveyFreeScreen(); }
+  else { html = renderJinroScreen(); }
   app.innerHTML = html;
   window.scrollTo(0,0);
 }
+function renderJinroScreen(){
+  switch(state.screen){
+    case 'setup': return screenSetup();
+    case 'confirm': return screenConfirm();
+    case 'night': return screenNight();
+    case 'morning': return screenMorning();
+    case 'medium_reveal': return screenMediumReveal();
+    case 'day_vote': return screenVote();
+    case 'execution': return screenExecution();
+    case 'gameover': return screenGameOver();
+    default: return screenSetup();
+  }
+}
+
+/* ---------- TOP MENU ---------- */
+function screenTop(){
+  return `
+  <div class="panel">
+    <div class="eyebrow">レクリエーション</div>
+    <h1>なにで遊ぶ?</h1>
+    <p class="lead">端末を1台、参加者で回して遊べるミニゲーム集です。</p>
+    <button class="btn btn-primary menubtn" onclick="enterJinro()">🐺 人狼<span class="sub">正体を隠して村を守れ・話し合いと投票のゲーム</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterLottery()">🎯 抽選<span class="sub">入力した候補からランダムに選ぶ</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterSurveyChoice()">🗳️ アンケート(選択式)<span class="sub">選択肢から選んでもらい、匿名で集計</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterSurveyFree()">✏️ アンケート(自由入力)<span class="sub">自由記述で回答してもらい、匿名で一覧表示</span></button>
+  </div>`;
+}
+function enterJinro(){ appMode='jinro'; state = freshSetup(); render(); }
+function enterLottery(){ appMode='lottery'; lotteryState = freshLottery(); render(); }
+function enterSurveyChoice(){ appMode='survey_choice'; surveyChoiceState = freshSurveyChoice(); render(); }
+function enterSurveyFree(){ appMode='survey_free'; surveyFreeState = freshSurveyFree(); render(); }
+function backToTop(){ appMode='top'; render(); }
 
 function moonMark(){
   return `<div class="daymark">第${state.night?state.night.day:1}夜</div><div class="moon"></div>`;
@@ -241,6 +299,7 @@ function screenSetup(){
     </div>`).join('');
   return `
   <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
     <div class="eyebrow">人狼 / GM代行</div>
     <h1>ゲームの準備</h1>
     <p class="lead">1台の端末を参加者で回して遊びます。人数と名前を決めて、夜の帳を開きましょう。</p>
@@ -273,13 +332,27 @@ function screenSetup(){
       <button onclick="changeRole('hunter',1)">+</button>
     </div>
 
+    <label>霊媒師の人数</label>
+    <div class="stepper">
+      <button onclick="changeRole('medium',-1)">−</button>
+      <div class="val">${state.mediumCount}</div>
+      <button onclick="changeRole('medium',1)">+</button>
+    </div>
+
+    <label>パパラッチの人数(人狼陣営の占い師)</label>
+    <div class="stepper">
+      <button onclick="changeRole('paparazzi',-1)">−</button>
+      <div class="val">${state.paparazziCount}</div>
+      <button onclick="changeRole('paparazzi',1)">+</button>
+    </div>
+
     <label>社長の人数(0〜1人)</label>
     <div class="stepper">
       <button onclick="changeRole('president',-1)">−</button>
       <div class="val">${state.presidentCount}</div>
       <button onclick="changeRole('president',1)">+</button>
     </div>
-    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 人狼 ${state.wolfCount}人</p>
+    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount - state.mediumCount - state.paparazziCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 霊媒師 ${state.mediumCount}人 ・ パパラッチ ${state.paparazziCount}人 ・ 社長 ${state.presidentCount}人 ・ 人狼 ${state.wolfCount}人</p>
 
     <label>参加者の名前</label>
     <div class="namegrid">${names}</div>
@@ -296,8 +369,8 @@ function changeN(d){
   } else {
     state.names = state.names.slice(0,n);
   }
-  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount);
-  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president;
+  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount, state.mediumCount, state.paparazziCount);
+  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president; state.mediumCount = c.medium; state.paparazziCount = c.paparazzi;
   render();
 }
 function changeRole(role, d){
@@ -305,20 +378,24 @@ function changeRole(role, d){
   const s = state.seerCount + (role==='seer'?d:0);
   const h = state.hunterCount + (role==='hunter'?d:0);
   const pr = state.presidentCount + (role==='president'?d:0);
-  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1) return;
-  if(w + s + h + pr > state.n) return;
-  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr;
+  const me = state.mediumCount + (role==='medium'?d:0);
+  const pp = state.paparazziCount + (role==='paparazzi'?d:0);
+  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1 || me < 0 || pp < 0) return;
+  if(w + s + h + pr + me + pp > state.n) return;
+  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr; state.mediumCount = me; state.paparazziCount = pp;
   render();
 }
 function setName(i,v){ state.names[i] = v; }
 
 function startGame(){
-  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount;
+  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount, me = state.mediumCount, pp = state.paparazziCount;
   const roles = [];
   for(let i=0;i<w;i++) roles.push('wolf');
   for(let i=0;i<s;i++) roles.push('seer');
   for(let i=0;i<h;i++) roles.push('hunter');
   for(let i=0;i<pr;i++) roles.push('president');
+  for(let i=0;i<me;i++) roles.push('medium');
+  for(let i=0;i<pp;i++) roles.push('paparazzi');
   while(roles.length < n) roles.push('villager');
   shuffle(roles);
   state.players = state.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role: roles[i], alive:true, deathCause:null}));
@@ -390,6 +467,7 @@ function beginNight(){
   state.night.seerResult = null;
   state.night.hunterTarget = null;
   state.night.villagerDummy = null;
+  state.night.paparazziTarget = null;
   state.screen = 'night';
   render();
 }
@@ -412,7 +490,7 @@ function screenNight(){
   }
 
   if(phase === 'act'){
-    if(role === 'villager' || role === 'president'){
+    if(role === 'villager' || role === 'president' || role === 'medium'){
       const targets = state.players.filter(q=>q.id!==p.id);
       const rows = targets.map(q=>targetRow(q, state.night.villagerDummy, `pick('villagerDummy', ${q.id})`, null)).join('');
       return `
@@ -427,7 +505,9 @@ function screenNight(){
     if(role === 'wolf'){
       const targets = state.players.filter(q=>q.id!==p.id);
       const rows = targets.map(q=>{
-        const disabledReason = (q.alive && q.role==='wolf') ? '人狼' : null;
+        let disabledReason = null;
+        if(q.alive && q.role==='wolf') disabledReason = '人狼';
+        // パパラッチは人狼陣営だが、人狼側からはその正体が分からない設定のため、通常のプレイヤーとして選択できる(誤って襲撃してしまう可能性がある)
         return targetRow(q, state.night.wolfTarget, `pick('wolfTarget', ${q.id})`, disabledReason);
       }).join('');
       return `
@@ -439,15 +519,16 @@ function screenNight(){
         <button class="btn btn-danger" ${state.night.wolfTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">この人を襲う</button>
       </div>`;
     }
-    if(role === 'seer'){
+    if(role === 'seer' || role === 'paparazzi'){
+      const field = role==='paparazzi' ? 'paparazziTarget' : 'seerTarget';
       const targets = state.players.filter(q=>q.id!==p.id);
-      const rows = targets.map(q=>targetRow(q, state.night.seerTarget, `pick('seerTarget', ${q.id})`, null)).join('');
+      const rows = targets.map(q=>targetRow(q, state.night[field], `pick('${field}', ${q.id})`, null)).join('');
       return `
       <div class="panel">
-        <div class="eyebrow">占い師の力</div>
-        <h3>誰を占いますか?</h3>
+        <div class="eyebrow">${role==='paparazzi'?'パパラッチの目':'占い師の力'}</div>
+        <h3>誰を調べますか?</h3>
         <div class="playergrid">${rows}</div>
-        <button class="btn btn-primary" ${state.night.seerTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">占う</button>
+        <button class="btn btn-primary" ${state.night[field]===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">調べる</button>
       </div>`;
     }
     // hunter(自分自身も対象に含む)
@@ -465,8 +546,9 @@ function screenNight(){
   }
 
   if(phase === 'result'){
-    if(role === 'seer'){
-      const t = playerById(state.night.seerTarget);
+    if(role === 'seer' || role === 'paparazzi'){
+      const field = role==='paparazzi' ? 'paparazziTarget' : 'seerTarget';
+      const t = playerById(state.night[field]);
       const isWolf = t.role === 'wolf';
       return `
       <div class="panel">
@@ -480,7 +562,7 @@ function screenNight(){
         <button class="btn btn-primary" onclick="nightPass()">確認した。画面を伏せる</button>
       </div>`;
     }
-    // villager / wolf / hunter は同じ見た目の確認画面(誰が何をしたか分からないようにする)
+    // villager / wolf / hunter / 社長 / 霊媒師 は同じ見た目の確認画面(誰が何をしたか分からないようにする)
     const label = role==='wolf' ? '選択を決めた' : role==='hunter' ? '選択を決めた' : '確認した';
     return `
     <div class="panel callwrap">
@@ -565,13 +647,60 @@ function screenMorning(){
 function afterMorning(){
   const w = checkWin();
   if(w){ state.winner = w; state.screen='gameover'; render(); return; }
-  beginVote();
+  const medium = state.players.find(p=>p.alive && p.role==='medium');
+  if(medium && state.pendingMediumReveal){
+    state.mediumPhase = 'call';
+    state.screen = 'medium_reveal';
+    render();
+  } else {
+    state.pendingMediumReveal = null;
+    beginVote();
+  }
 }
+function screenMediumReveal(){
+  const medium = state.players.find(p=>p.alive && p.role==='medium');
+  const info = state.pendingMediumReveal;
+  const phase = state.mediumPhase;
+  if(phase === 'call'){
+    return `
+    <div class="panel callwrap">
+      <div class="eyebrow">霊媒の刻</div>
+      <div class="who">${escapeHtml(medium.name)} さんの番です</div>
+      <div class="msg">他の人に見えないように、画面を自分だけで確認してください。</div>
+      <button class="btn btn-primary" onclick="mediumReveal()">確認する</button>
+    </div>`;
+  }
+  if(phase === 'reveal'){
+    const isWolf = info.wasWolf;
+    return `
+    <div class="panel">
+      <div class="card3d">
+        <div class="cardface">
+          <div class="roleicon">${isWolf?'🐺':'✨'}</div>
+          <div class="rolename">${escapeHtml(info.name)} さんは</div>
+          <div class="roledesc" style="font-size:18px; color:${isWolf?'#ffb3a4':'var(--silver)'}">${isWolf?'人狼だった':'人狼ではなかった'}</div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="mediumDone()">確認した。画面を伏せる</button>
+    </div>`;
+  }
+  // pass
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">受け渡し</div>
+    <div class="who">画面を伏せてください</div>
+    <div class="msg">投票を始めます。端末を全員に見えるように置いてください。</div>
+    <button class="btn btn-primary" onclick="mediumAdvance()">投票へ進む</button>
+  </div>`;
+}
+function mediumReveal(){ state.mediumPhase = 'reveal'; render(); }
+function mediumDone(){ state.mediumPhase = 'pass'; render(); }
+function mediumAdvance(){ state.pendingMediumReveal = null; beginVote(); }
 function checkWin(){
-  const wolves = aliveWolves().length;
-  const others = alivePlayers().length - wolves;
-  if(wolves === 0) return 'villagers';
-  if(wolves >= others) return 'wolves';
+  const wolfSide = aliveWolfSide().length;
+  const others = alivePlayers().length - wolfSide;
+  if(wolfSide === 0) return 'villagers';
+  if(wolfSide >= others) return 'wolves';
   return null;
 }
 
@@ -632,7 +761,13 @@ function resolveVote(){
 
   state.lastExecuted = executedId;
   state.executionNote = executionNote;
-  if(executedId !== null){ const e = playerById(executedId); e.alive = false; e.deathCause = 'executed'; }
+  if(executedId !== null){
+    const e = playerById(executedId);
+    e.alive = false; e.deathCause = 'executed';
+    state.pendingMediumReveal = {name: e.name, wasWolf: e.role==='wolf'};
+  } else {
+    state.pendingMediumReveal = null;
+  }
   state.screen = 'execution';
   render();
 }
@@ -640,15 +775,13 @@ function resolveVote(){
 /* ---------- EXECUTION RESULT ---------- */
 function screenExecution(){
   const p = state.lastExecuted !== null ? playerById(state.lastExecuted) : null;
-  const r = p ? ROLES[p.role] : null;
   return `
   <div class="panel callwrap">
     <div class="eyebrow">処刑</div>
     ${p ? `
       <div class="who">${escapeHtml(p.name)} さん</div>
-      <div class="msg">村の裁きにより、追放されました。</div>
+      <div class="msg">村の裁きにより、追放されました。正体はまだ明かされません。</div>
       ${state.executionNote==='president' ? '<div class="hint">※ 社長の指名により追放が決定しました。</div>' : (state.tieNote ? '<div class="hint">※ 同数票のため、抽選で決定しました。</div>' : '')}
-      <div class="badge ${r.cls}" style="margin-top:6px;">${r.emoji} ${r.name} だった</div>
     ` : `<div class="who">追放者なし</div><div class="msg">票が入りませんでした。</div>`}
     <button class="btn btn-primary" style="margin-top:24px;" onclick="afterExecution()">続ける</button>
   </div>`;
@@ -663,7 +796,7 @@ function afterExecution(){
 /* ---------- GAME OVER ---------- */
 function screenGameOver(){
   const title = state.winner === 'villagers' ? '村人陣営の勝利' : '人狼陣営の勝利';
-  const sub = state.winner === 'villagers' ? 'すべての人狼が排除されました。' : '人狼の数が村人の数以上になりました。';
+  const sub = state.winner === 'villagers' ? '人狼陣営がすべて排除されました。' : '人狼陣営の数が村人陣営の数以上になりました。';
   const rows = state.players.map(p=>{
     const r = ROLES[p.role];
     return `<div class="resultrow ${p.alive?'':'dead'}">
@@ -691,6 +824,363 @@ function resetGame(){
   while(state.names.length < prevN) state.names.push('プレイヤー'+(state.names.length+1));
   state.wolfCount = calcWolfCount(prevN);
   render();
+}
+
+/* ==================== LOTTERY ==================== */
+function freshLottery(){
+  return { phase:'setup', items:[], inputVal:'', pool:[], drawn:[] };
+}
+let lotteryState = freshLottery();
+function renderLotteryScreen(){
+  return lotteryState.phase==='setup' ? screenLotterySetup() : screenLotteryDraw();
+}
+function screenLotterySetup(){
+  const s = lotteryState;
+  const chips = s.items.map((it,i)=>`<span class="chip">${escapeHtml(it)} <span class="x" onclick="removeLotteryItem(${i})">✕</span></span>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">抽選</div>
+    <h1>候補を入力</h1>
+    <p class="lead">人の名前でも、お題でも、何でもランダムに抽選できます。1件ずつ引いていくので、順番決めにも使えます。</p>
+    <label>候補</label>
+    <div class="row">
+      <input type="text" value="${escapeHtml(s.inputVal)}" oninput="setLotteryInput(this.value)" onkeydown="if(event.key==='Enter'){addLotteryItem();}" placeholder="候補を入力してEnter" style="flex:1;">
+    </div>
+    <button class="btn btn-primary" onclick="addLotteryItem()">追加する</button>
+    <div class="chipwrap">${chips || '<p class="hint">まだ候補がありません</p>'}</div>
+    <button class="btn btn-primary" ${s.items.length<1?'disabled style="opacity:.4"':''} onclick="startLottery()">この候補で抽選を始める(${s.items.length}件)</button>
+  </div>`;
+}
+function setLotteryInput(v){ lotteryState.inputVal = v; }
+function addLotteryItem(){
+  const v = lotteryState.inputVal.trim();
+  if(!v) return;
+  lotteryState.items.push(v);
+  lotteryState.inputVal = '';
+  render();
+}
+function removeLotteryItem(i){ lotteryState.items.splice(i,1); render(); }
+function startLottery(){
+  lotteryState.pool = [...lotteryState.items];
+  lotteryState.drawn = [];
+  lotteryState.phase = 'draw';
+  render();
+}
+function screenLotteryDraw(){
+  const s = lotteryState;
+  const remaining = s.pool.length;
+  const last = s.drawn[s.drawn.length-1];
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">抽選</div>
+    <h1>残り ${remaining} 件</h1>
+    ${last ? `
+      <div class="card3d"><div class="cardface pop-in">
+        <div class="roleicon">🎉</div>
+        <div class="rolename">${escapeHtml(last)}</div>
+      </div></div>
+    ` : `<p class="lead">ボタンを押して抽選してください。</p>`}
+    <button class="btn btn-danger" ${remaining===0?'disabled style="opacity:.4"':''} onclick="drawLottery()">${remaining===0?'すべて抽選済み':'抽選する!'}</button>
+    ${s.drawn.length ? `
+      <div class="divider"></div>
+      <h3>抽選順</h3>
+      <div class="resultlist">${s.drawn.map((it,i)=>`<div class="resultrow"><span class="rname">${i+1}. ${escapeHtml(it)}</span></div>`).join('')}</div>
+    ` : ''}
+    <button class="btn btn-primary" onclick="resetLottery()">候補を編集してやり直す</button>
+  </div>`;
+}
+function drawLottery(){
+  const s = lotteryState;
+  if(s.pool.length===0) return;
+  const idx = Math.floor(Math.random()*s.pool.length);
+  const [picked] = s.pool.splice(idx,1);
+  s.drawn.push(picked);
+  render();
+}
+function resetLottery(){ lotteryState.phase='setup'; lotteryState.drawn=[]; render(); }
+
+/* ==================== SURVEY (choice) ==================== */
+function freshSurveyChoice(){
+  const n = 8;
+  return {
+    phase:'setup', question:'', options:['',''],
+    n, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
+    qIdx:0, subPhase:'call', answers:[]
+  };
+}
+let surveyChoiceState = freshSurveyChoice();
+function renderSurveyChoiceScreen(){
+  const s = surveyChoiceState;
+  if(s.phase==='setup') return screenSurveyChoiceSetup();
+  if(s.phase==='collect') return screenSurveyChoiceCollect();
+  return screenSurveyChoiceResults();
+}
+function screenSurveyChoiceSetup(){
+  const s = surveyChoiceState;
+  const optRows = s.options.map((op,i)=>`
+    <div class="nameitem">
+      <div class="idx">${i+1}</div>
+      <input type="text" value="${escapeHtml(op)}" oninput="setSurveyOption(${i}, this.value)" placeholder="選択肢${i+1}">
+      ${s.options.length>2 ? `<span class="x" style="cursor:pointer;color:var(--silver-dim);" onclick="removeSurveyOption(${i})">✕</span>` : ''}
+    </div>`).join('');
+  const nameRows = s.names.map((nm,i)=>`
+    <div class="nameitem"><div class="idx">${i+1}</div><input type="text" value="${escapeHtml(nm)}" oninput="setSurveyName(${i}, this.value)"></div>`).join('');
+  const canStart = s.question.trim() && s.options.filter(o=>o.trim()).length>=2;
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">アンケート(選択式)</div>
+    <h1>質問を作る</h1>
+    <p class="lead">端末を順番に回して、匿名で回答してもらいます。</p>
+    <label>質問</label>
+    <input type="text" value="${escapeHtml(s.question)}" oninput="setSurveyQuestion(this.value)" placeholder="例: 打ち上げはどこがいい?">
+    <label>選択肢(2つ以上)</label>
+    <div class="namegrid">${optRows}</div>
+    <button class="btn btn-sub" onclick="addSurveyOption()">+ 選択肢を追加</button>
+    <label>回答する人数</label>
+    <div class="stepper">
+      <button onclick="changeSurveyN(-1)">−</button>
+      <div class="val">${s.n}</div>
+      <button onclick="changeSurveyN(1)">+</button>
+    </div>
+    <label>参加者の名前</label>
+    <div class="namegrid">${nameRows}</div>
+    <button class="btn btn-primary" id="surveyChoiceStartBtn" ${canStart?'':'disabled style="opacity:.4"'} onclick="startSurveyChoice()">回答をはじめる</button>
+  </div>`;
+}
+function setSurveyQuestion(v){ surveyChoiceState.question=v; refreshSurveyChoiceStartBtn(); }
+function setSurveyOption(i,v){ surveyChoiceState.options[i]=v; refreshSurveyChoiceStartBtn(); }
+function refreshSurveyChoiceStartBtn(){
+  const el = document.getElementById('surveyChoiceStartBtn');
+  if(!el) return;
+  const ok = surveyChoiceState.question.trim() && surveyChoiceState.options.filter(o=>o.trim()).length>=2;
+  el.disabled = !ok;
+  el.style.opacity = ok ? '1' : '.4';
+}
+function addSurveyOption(){ surveyChoiceState.options.push(''); render(); }
+function removeSurveyOption(i){ surveyChoiceState.options.splice(i,1); render(); }
+function changeSurveyN(d){
+  const s = surveyChoiceState;
+  const n = Math.min(30, Math.max(2, s.n+d));
+  if(n===s.n) return;
+  s.n = n;
+  if(n>s.names.length){ while(s.names.length<n) s.names.push('プレイヤー'+(s.names.length+1)); }
+  else s.names = s.names.slice(0,n);
+  render();
+}
+function setSurveyName(i,v){ surveyChoiceState.names[i]=v; }
+function startSurveyChoice(){
+  const s = surveyChoiceState;
+  s.options = s.options.filter(o=>o.trim());
+  s.answers = new Array(s.n).fill(null);
+  s.qIdx = 0;
+  s.subPhase = 'call';
+  s.phase = 'collect';
+  render();
+}
+function screenSurveyChoiceCollect(){
+  const s = surveyChoiceState;
+  const name = s.names[s.qIdx] || ('プレイヤー'+(s.qIdx+1));
+  if(s.subPhase==='call'){
+    return `
+    <div class="panel callwrap">
+      <div class="eyebrow">回答 ${s.qIdx+1} / ${s.n}</div>
+      <div class="who">${escapeHtml(name)} さんの番です</div>
+      <div class="msg">他の人に見えないように、画面を自分だけで確認してください。</div>
+      <button class="btn btn-primary" onclick="surveyChoiceAct()">回答する</button>
+    </div>`;
+  }
+  if(s.subPhase==='act'){
+    const rows = s.options.map((op,i)=>`<div class="pbtn ${s.answers[s.qIdx]===i?'selected':''}" onclick="pickSurveyAnswer(${i})"><span>${escapeHtml(op)}</span></div>`).join('');
+    return `
+    <div class="panel">
+      <div class="eyebrow">${escapeHtml(s.question)}</div>
+      <h3>回答を選んでください</h3>
+      <div class="playergrid">${rows}</div>
+      <button class="btn btn-primary" ${s.answers[s.qIdx]===null?'disabled style="opacity:.4"':''} onclick="surveyChoiceConfirm()">この回答にする</button>
+    </div>`;
+  }
+  const hasNext = s.qIdx+1 < s.n;
+  const nextName = hasNext ? escapeHtml(s.names[s.qIdx+1]||('プレイヤー'+(s.qIdx+2))) : null;
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">受け渡し</div>
+    <div class="who">画面を伏せてください</div>
+    <div class="msg">${hasNext ? '次は '+nextName+' さんに渡してください。' : '全員の回答が終わりました。'}</div>
+    <button class="btn btn-primary" onclick="surveyChoiceAdvance()">${hasNext?'渡したら次へ':'結果を見る'}</button>
+  </div>`;
+}
+function surveyChoiceAct(){ surveyChoiceState.subPhase='act'; render(); }
+function pickSurveyAnswer(i){ surveyChoiceState.answers[surveyChoiceState.qIdx]=i; render(); }
+function surveyChoiceConfirm(){ surveyChoiceState.subPhase='pass'; render(); }
+function surveyChoiceAdvance(){
+  const s = surveyChoiceState;
+  if(s.qIdx+1 < s.n){ s.qIdx+=1; s.subPhase='call'; render(); }
+  else { s.phase='results'; render(); }
+}
+function screenSurveyChoiceResults(){
+  const s = surveyChoiceState;
+  const total = s.answers.filter(a=>a!==null).length;
+  const tally = s.options.map((op,i)=> s.answers.filter(a=>a===i).length);
+  const maxCount = Math.max(...tally, 1);
+  const rows = s.options.map((op,i)=>{
+    const c = tally[i];
+    const pct = Math.round((c/maxCount)*100);
+    return `
+    <div class="barrow">
+      <div class="row" style="justify-content:space-between; margin-bottom:6px;">
+        <span>${escapeHtml(op)}</span><span class="small">${c}票</span>
+      </div>
+      <div class="bartrack"><div class="barfill" style="width:${pct}%;"></div></div>
+    </div>`;
+  }).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">結果(匿名)</div>
+    <h1>${escapeHtml(s.question)}</h1>
+    <p class="lead">回答数: ${total}件</p>
+    ${rows}
+    <button class="btn btn-primary" onclick="enterSurveyChoice()">もう一度アンケートする</button>
+  </div>`;
+}
+
+/* ==================== SURVEY (free text) ==================== */
+function freshSurveyFree(){
+  const n = 8;
+  return {
+    phase:'setup', question:'',
+    n, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
+    qIdx:0, subPhase:'call', inputVal:'', answers:[], shuffledAnswers:[]
+  };
+}
+let surveyFreeState = freshSurveyFree();
+function renderSurveyFreeScreen(){
+  const s = surveyFreeState;
+  if(s.phase==='setup') return screenSurveyFreeSetup();
+  if(s.phase==='collect') return screenSurveyFreeCollect();
+  return screenSurveyFreeResults();
+}
+function screenSurveyFreeSetup(){
+  const s = surveyFreeState;
+  const nameRows = s.names.map((nm,i)=>`
+    <div class="nameitem"><div class="idx">${i+1}</div><input type="text" value="${escapeHtml(nm)}" oninput="setSurveyFreeName(${i}, this.value)"></div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">アンケート(自由入力)</div>
+    <h1>質問を作る</h1>
+    <p class="lead">端末を順番に回して、匿名で自由回答してもらいます。</p>
+    <label>質問</label>
+    <input type="text" value="${escapeHtml(s.question)}" oninput="setSurveyFreeQuestion(this.value)" placeholder="例: 今年一番の思い出は?">
+    <label>回答する人数</label>
+    <div class="stepper">
+      <button onclick="changeSurveyFreeN(-1)">−</button>
+      <div class="val">${s.n}</div>
+      <button onclick="changeSurveyFreeN(1)">+</button>
+    </div>
+    <label>参加者の名前</label>
+    <div class="namegrid">${nameRows}</div>
+    <button class="btn btn-primary" id="surveyFreeStartBtn" ${s.question.trim()?'':'disabled style="opacity:.4"'} onclick="startSurveyFree()">回答をはじめる</button>
+  </div>`;
+}
+function setSurveyFreeQuestion(v){ surveyFreeState.question=v; refreshSurveyFreeStartBtn(); }
+function refreshSurveyFreeStartBtn(){
+  const el = document.getElementById('surveyFreeStartBtn');
+  if(!el) return;
+  const ok = !!surveyFreeState.question.trim();
+  el.disabled = !ok;
+  el.style.opacity = ok ? '1' : '.4';
+}
+function changeSurveyFreeN(d){
+  const s = surveyFreeState;
+  const n = Math.min(30, Math.max(2, s.n+d));
+  if(n===s.n) return;
+  s.n = n;
+  if(n>s.names.length){ while(s.names.length<n) s.names.push('プレイヤー'+(s.names.length+1)); }
+  else s.names = s.names.slice(0,n);
+  render();
+}
+function setSurveyFreeName(i,v){ surveyFreeState.names[i]=v; }
+function startSurveyFree(){
+  const s = surveyFreeState;
+  s.answers = new Array(s.n).fill('');
+  s.qIdx = 0;
+  s.subPhase = 'call';
+  s.inputVal = '';
+  s.phase = 'collect';
+  render();
+}
+function screenSurveyFreeCollect(){
+  const s = surveyFreeState;
+  const name = s.names[s.qIdx] || ('プレイヤー'+(s.qIdx+1));
+  if(s.subPhase==='call'){
+    return `
+    <div class="panel callwrap">
+      <div class="eyebrow">回答 ${s.qIdx+1} / ${s.n}</div>
+      <div class="who">${escapeHtml(name)} さんの番です</div>
+      <div class="msg">他の人に見えないように、画面を自分だけで確認してください。</div>
+      <button class="btn btn-primary" onclick="surveyFreeAct()">回答する</button>
+    </div>`;
+  }
+  if(s.subPhase==='act'){
+    return `
+    <div class="panel">
+      <div class="eyebrow">${escapeHtml(s.question)}</div>
+      <h3>${escapeHtml(name)} さんの回答</h3>
+      <textarea rows="4" oninput="setSurveyFreeInput(this.value)" placeholder="自由に入力してください">${escapeHtml(s.inputVal)}</textarea>
+      <button class="btn btn-primary" id="surveyFreeConfirmBtn" ${s.inputVal.trim()?'':'disabled style="opacity:.4"'} onclick="surveyFreeConfirm()">この内容で回答する</button>
+    </div>`;
+  }
+  const hasNext = s.qIdx+1 < s.n;
+  const nextName = hasNext ? escapeHtml(s.names[s.qIdx+1]||('プレイヤー'+(s.qIdx+2))) : null;
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">受け渡し</div>
+    <div class="who">画面を伏せてください</div>
+    <div class="msg">${hasNext ? '次は '+nextName+' さんに渡してください。' : '全員の回答が終わりました。'}</div>
+    <button class="btn btn-primary" onclick="surveyFreeAdvance()">${hasNext?'渡したら次へ':'結果を見る'}</button>
+  </div>`;
+}
+function surveyFreeAct(){ surveyFreeState.subPhase='act'; render(); }
+function setSurveyFreeInput(v){ surveyFreeState.inputVal=v; refreshSurveyFreeConfirmBtn(); }
+function refreshSurveyFreeConfirmBtn(){
+  const el = document.getElementById('surveyFreeConfirmBtn');
+  if(!el) return;
+  const ok = !!surveyFreeState.inputVal.trim();
+  el.disabled = !ok;
+  el.style.opacity = ok ? '1' : '.4';
+}
+function surveyFreeConfirm(){
+  const s = surveyFreeState;
+  s.answers[s.qIdx] = s.inputVal.trim();
+  s.subPhase = 'pass';
+  render();
+}
+function surveyFreeAdvance(){
+  const s = surveyFreeState;
+  if(s.qIdx+1 < s.n){ s.qIdx+=1; s.subPhase='call'; s.inputVal=''; render(); }
+  else {
+    const copy = [...s.answers];
+    shuffle(copy);
+    s.shuffledAnswers = copy;
+    s.phase='results';
+    render();
+  }
+}
+function screenSurveyFreeResults(){
+  const s = surveyFreeState;
+  const rows = s.shuffledAnswers.map(a=>`<div class="resultrow"><span class="rname">${escapeHtml(a || '(未回答)')}</span></div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">結果(匿名・順不同)</div>
+    <h1>${escapeHtml(s.question)}</h1>
+    <div class="resultlist">${rows}</div>
+    <button class="btn btn-primary" onclick="enterSurveyFree()">もう一度アンケートする</button>
+  </div>`;
 }
 
 render();
