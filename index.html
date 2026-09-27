@@ -246,6 +246,7 @@ function render(){
   let html = '';
   if(appMode === 'top'){ html = screenTop(); }
   else if(appMode === 'lottery'){ html = renderLotteryScreen(); }
+  else if(appMode === 'talk_theme'){ html = renderTalkThemeScreen(); }
   else if(appMode === 'survey_choice'){ html = renderSurveyChoiceScreen(); }
   else if(appMode === 'survey_free'){ html = renderSurveyFreeScreen(); }
   else { html = renderJinroScreen(); }
@@ -274,7 +275,8 @@ function screenTop(){
     <h1>なにで遊ぶ?</h1>
     <p class="lead">端末を1台、参加者で回して遊べるミニゲーム集です。</p>
     <button class="btn btn-primary menubtn" onclick="enterJinro()">🐺 人狼<span class="sub">正体を隠して村を守れ・話し合いと投票のゲーム</span></button>
-    <button class="btn btn-primary menubtn" onclick="enterLottery()">🎯 抽選<span class="sub">入力した候補からランダムに選ぶ</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterLottery()">🎯 抽選<span class="sub">入力した候補からランダムに選ぶ・チーム分けも可能</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterTalkTheme()">💬 トークテーマ<span class="sub">会話のきっかけになるお題をランダムに引く</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyChoice()">🗳️ アンケート(選択式)<span class="sub">選択肢から選んでもらい、匿名で集計</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyFree()">✏️ アンケート(自由入力)<span class="sub">自由記述で回答してもらい、匿名で一覧表示</span></button>
   </div>`;
@@ -284,6 +286,99 @@ function enterLottery(){ appMode='lottery'; lotteryState = freshLottery(); rende
 function enterSurveyChoice(){ appMode='survey_choice'; surveyChoiceState = freshSurveyChoice(); render(); }
 function enterSurveyFree(){ appMode='survey_free'; surveyFreeState = freshSurveyFree(); render(); }
 function backToTop(){ appMode='top'; render(); }
+
+/* ==================== TALK THEME ==================== */
+const DEFAULT_TALK_THEMES = [
+  '最近ハマっていることは?',
+  '人生で一番の思い出は?',
+  '今まで行った中で一番良かった場所は?',
+  '子供の頃の夢は?',
+  '最近感動したことは?',
+  '好きな食べ物ベスト3',
+  'もし1億円当たったら何に使う?',
+  '尊敬する人は誰?',
+  '今一番欲しいものは?',
+  '休日の過ごし方は?',
+  '学生時代の一番の思い出は?',
+  '最近見て良かった映画やドラマは?',
+  '自分の長所と短所は?',
+  'もし1週間休みが取れたら何をする?',
+  '好きな季節とその理由は?'
+];
+function freshTalkTheme(){
+  return { phase:'setup', items:[...DEFAULT_TALK_THEMES], inputVal:'', pool:[], drawn:[] };
+}
+let talkThemeState = freshTalkTheme();
+function enterTalkTheme(){ appMode='talk_theme'; talkThemeState = freshTalkTheme(); render(); }
+function renderTalkThemeScreen(){
+  return talkThemeState.phase==='setup' ? screenTalkThemeSetup() : screenTalkThemeDraw();
+}
+function screenTalkThemeSetup(){
+  const s = talkThemeState;
+  const chips = s.items.map((it,i)=>`<span class="chip">${escapeHtml(it)} <span class="x" onclick="removeTalkThemeItem(${i})">✕</span></span>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">トークテーマ</div>
+    <h1>お題を確認・追加</h1>
+    <p class="lead">定番のお題をあらかじめ入れています。不要なものは✕で消し、自由に追加もできます。</p>
+    <label>お題</label>
+    <div class="row">
+      <input type="text" value="${escapeHtml(s.inputVal)}" oninput="setTalkThemeInput(this.value)" onkeydown="if(event.key==='Enter'){addTalkThemeItem();}" placeholder="お題を入力してEnter" style="flex:1;">
+    </div>
+    <button class="btn btn-primary" onclick="addTalkThemeItem()">追加する</button>
+    <div class="chipwrap">${chips || '<p class="hint">お題がありません</p>'}</div>
+    <button class="btn btn-primary" ${s.items.length<1?'disabled style="opacity:.4"':''} onclick="startTalkTheme()">このお題で始める(${s.items.length}件)</button>
+  </div>`;
+}
+function setTalkThemeInput(v){ talkThemeState.inputVal = v; }
+function addTalkThemeItem(){
+  const v = talkThemeState.inputVal.trim();
+  if(!v) return;
+  talkThemeState.items.push(v);
+  talkThemeState.inputVal = '';
+  render();
+}
+function removeTalkThemeItem(i){ talkThemeState.items.splice(i,1); render(); }
+function startTalkTheme(){
+  talkThemeState.pool = [...talkThemeState.items];
+  talkThemeState.drawn = [];
+  talkThemeState.phase = 'draw';
+  render();
+}
+function screenTalkThemeDraw(){
+  const s = talkThemeState;
+  const remaining = s.pool.length;
+  const last = s.drawn[s.drawn.length-1];
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">トークテーマ</div>
+    <h1>残り ${remaining} 件</h1>
+    ${last ? `
+      <div class="card3d"><div class="cardface pop-in">
+        <div class="roleicon">💬</div>
+        <div class="rolename" style="font-size:20px; line-height:1.5;">${escapeHtml(last)}</div>
+      </div></div>
+    ` : `<p class="lead">ボタンを押してお題を引いてください。</p>`}
+    <button class="btn btn-danger" ${remaining===0?'disabled style="opacity:.4"':''} onclick="drawTalkTheme()">${remaining===0?'すべて出しました':'お題を引く!'}</button>
+    ${s.drawn.length ? `
+      <div class="divider"></div>
+      <h3>出したお題</h3>
+      <div class="resultlist">${s.drawn.map((it,i)=>`<div class="resultrow"><span class="rname">${i+1}. ${escapeHtml(it)}</span></div>`).join('')}</div>
+    ` : ''}
+    <button class="btn btn-primary" onclick="resetTalkTheme()">お題を編集してやり直す</button>
+  </div>`;
+}
+function drawTalkTheme(){
+  const s = talkThemeState;
+  if(s.pool.length===0) return;
+  const idx = Math.floor(Math.random()*s.pool.length);
+  const [picked] = s.pool.splice(idx,1);
+  s.drawn.push(picked);
+  render();
+}
+function resetTalkTheme(){ talkThemeState.phase='setup'; talkThemeState.drawn=[]; render(); }
 
 function moonMark(){
   return `<div class="daymark">第${state.night?state.night.day:1}夜</div><div class="moon"></div>`;
@@ -827,30 +922,54 @@ function resetGame(){
 
 /* ==================== LOTTERY ==================== */
 function freshLottery(){
-  return { phase:'setup', items:[], inputVal:'', pool:[], drawn:[] };
+  return { phase:'setup', mode:'draw', items:[], inputVal:'', pool:[], drawn:[], teamCount:2, teams:[] };
 }
 let lotteryState = freshLottery();
 function renderLotteryScreen(){
-  return lotteryState.phase==='setup' ? screenLotterySetup() : screenLotteryDraw();
+  const s = lotteryState;
+  if(s.phase==='setup') return screenLotterySetup();
+  if(s.phase==='draw') return screenLotteryDraw();
+  return screenLotteryTeams();
 }
 function screenLotterySetup(){
   const s = lotteryState;
   const chips = s.items.map((it,i)=>`<span class="chip">${escapeHtml(it)} <span class="x" onclick="removeLotteryItem(${i})">✕</span></span>`).join('');
+  const maxTeams = Math.max(2, s.items.length || 2);
   return `
   <div class="panel">
     <button class="backlink" onclick="backToTop()">← トップに戻る</button>
     <div class="eyebrow">抽選</div>
     <h1>候補を入力</h1>
-    <p class="lead">人の名前でも、お題でも、何でもランダムに抽選できます。1件ずつ引いていくので、順番決めにも使えます。</p>
+    <p class="lead">人の名前でも、お題でも、何でもランダムに扱えます。</p>
+
+    <label>モード</label>
+    <div class="row" style="gap:8px; margin-bottom:14px;">
+      <button class="btn ${s.mode==='draw'?'btn-primary':''}" style="margin:0;" onclick="setLotteryMode('draw')">1件ずつ抽選</button>
+      <button class="btn ${s.mode==='teams'?'btn-primary':''}" style="margin:0;" onclick="setLotteryMode('teams')">チーム分け</button>
+    </div>
+
     <label>候補</label>
     <div class="row">
       <input type="text" value="${escapeHtml(s.inputVal)}" oninput="setLotteryInput(this.value)" onkeydown="if(event.key==='Enter'){addLotteryItem();}" placeholder="候補を入力してEnter" style="flex:1;">
     </div>
     <button class="btn btn-primary" onclick="addLotteryItem()">追加する</button>
     <div class="chipwrap">${chips || '<p class="hint">まだ候補がありません</p>'}</div>
-    <button class="btn btn-primary" ${s.items.length<1?'disabled style="opacity:.4"':''} onclick="startLottery()">この候補で抽選を始める(${s.items.length}件)</button>
+
+    ${s.mode==='teams' ? `
+      <label>チーム数</label>
+      <div class="stepper">
+        <button onclick="changeTeamCount(-1)">−</button>
+        <div class="val">${s.teamCount}</div>
+        <button onclick="changeTeamCount(1)">+</button>
+      </div>
+      <p class="hint">${s.items.length}件を${s.teamCount}チームに振り分けます</p>
+      <button class="btn btn-primary" ${s.items.length<2?'disabled style="opacity:.4"':''} onclick="startTeams()">この候補でチーム分けする</button>
+    ` : `
+      <button class="btn btn-primary" ${s.items.length<1?'disabled style="opacity:.4"':''} onclick="startLottery()">この候補で抽選を始める(${s.items.length}件)</button>
+    `}
   </div>`;
 }
+function setLotteryMode(m){ lotteryState.mode = m; render(); }
 function setLotteryInput(v){ lotteryState.inputVal = v; }
 function addLotteryItem(){
   const v = lotteryState.inputVal.trim();
@@ -860,6 +979,13 @@ function addLotteryItem(){
   render();
 }
 function removeLotteryItem(i){ lotteryState.items.splice(i,1); render(); }
+function changeTeamCount(d){
+  const s = lotteryState;
+  const maxT = Math.max(2, s.items.length || 2);
+  const t = Math.min(maxT, Math.max(2, s.teamCount+d));
+  s.teamCount = t;
+  render();
+}
 function startLottery(){
   lotteryState.pool = [...lotteryState.items];
   lotteryState.drawn = [];
@@ -898,7 +1024,35 @@ function drawLottery(){
   s.drawn.push(picked);
   render();
 }
+function startTeams(){
+  const s = lotteryState;
+  const shuffled = [...s.items];
+  shuffle(shuffled);
+  const teams = Array.from({length:s.teamCount}, ()=>[]);
+  shuffled.forEach((item,i)=> teams[i % s.teamCount].push(item));
+  s.teams = teams;
+  s.phase = 'teams_result';
+  render();
+}
+function screenLotteryTeams(){
+  const s = lotteryState;
+  const groups = s.teams.map((team,i)=>`
+    <div style="margin-bottom:16px;">
+      <h3>チーム ${i+1}</h3>
+      <div class="resultlist">${team.map(name=>`<div class="resultrow"><span class="rname">${escapeHtml(name)}</span></div>`).join('')}</div>
+    </div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">チーム分け結果</div>
+    <h1>${s.teamCount}チームに分かれました</h1>
+    ${groups}
+    <button class="btn btn-primary" onclick="startTeams()">もう一度シャッフルする</button>
+    <button class="btn btn-sub" onclick="resetLottery()">候補を編集してやり直す</button>
+  </div>`;
+}
 function resetLottery(){ lotteryState.phase='setup'; lotteryState.drawn=[]; render(); }
+
 
 /* ==================== SURVEY (choice) ==================== */
 function freshSurveyChoice(){
