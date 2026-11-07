@@ -17,7 +17,6 @@
   --amber:#d9a441;
   --mist:#6f93c9;
   --emerald:#6fcf97;
-  --teal:#5fb8b3;
   --line:rgba(205,214,229,0.12);
   --font-display:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
   --font-body:"Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif;
@@ -140,8 +139,6 @@ input[type=text]:focus{outline:1px solid var(--mist);}
 .badge.seer{color:var(--mist); border-color:rgba(111,147,201,0.4); background:rgba(111,147,201,0.08);}
 .badge.hunter{color:var(--silver); border-color:var(--line); background:rgba(205,214,229,0.06);}
 .badge.president{color:var(--emerald); border-color:rgba(111,207,151,0.45); background:rgba(111,207,151,0.09);}
-.badge.medium{color:var(--teal); border-color:rgba(95,184,179,0.45); background:rgba(95,184,179,0.09);}
-.badge.paparazzi{color:#ffb3a4; border-color:rgba(214,68,48,0.5); background:rgba(214,68,48,0.1);}
 
 .chipwrap{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;}
 .chip{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--bg-panel-lighter); border:1px solid var(--line); font-size:13px;}
@@ -159,6 +156,16 @@ textarea{
 textarea:focus{outline:1px solid var(--mist);}
 @keyframes popIn{0%{transform:scale(.7);opacity:0}60%{transform:scale(1.06);opacity:1}100%{transform:scale(1)}}
 .pop-in{animation:popIn .4s cubic-bezier(.2,1.4,.4,1) both;}
+.logpanel{
+  margin-top:14px; padding:14px 16px; border-radius:16px;
+  background:rgba(19,27,46,0.85); border:1px solid var(--line);
+  max-height:240px; overflow-y:auto; -webkit-overflow-scrolling:touch;
+}
+.logpanel h4{margin:0 0 8px; font-size:12px; letter-spacing:0.2em; color:var(--silver-dim); font-weight:600;}
+.logrow{font-size:13px; line-height:1.6; padding:6px 0; border-top:1px solid var(--line); color:var(--silver);}
+.logrow:first-of-type{border-top:none;}
+.logrow .logsub{display:block; font-size:11px; color:var(--silver-dim); line-height:1.5;}
+.errtext{color:#ffb3a4; font-size:13px; line-height:1.6; margin:10px 0 0;}
 
 .divider{height:1px; background:var(--line); margin:20px 0;}
 .resultlist{display:flex; flex-direction:column; gap:8px; margin:12px 0 6px;}
@@ -177,29 +184,23 @@ const ROLES = {
   villager: {name:'村人',   emoji:'👤', cls:'villager', desc:'特別な力はない。話し合いと観察だけを頼りに、人狼を見つけ出せ。'},
   seer:     {name:'占い師', emoji:'🔮', cls:'seer',     desc:'夜ごとに一人を選び、その者が人狼かどうかを見抜くことができる。'},
   hunter:   {name:'狩人',   emoji:'🛡️', cls:'hunter',   desc:'夜ごとに一人を選び、人狼の凶刃から守ることができる。'},
-  president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'},
-  medium:   {name:'霊媒師', emoji:'👁️', cls:'medium',   desc:'追放されたプレイヤーが人狼だったかどうかを、次の投票が始まる前にひとりだけ知ることができる。'},
-  paparazzi:{name:'パパラッチ', emoji:'📸', cls:'paparazzi', desc:'占い師のように誰かの正体を夜ごとに調べられるが、あなたは人狼陣営に属している。占いでは人狼だと見抜かれない。'}
+  president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'}
 };
 
 function calcWolfCount(n){ return Math.max(1, Math.floor(n/4)); }
 // 各役職の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
-function clampRoleCounts(n, wolf, seer, hunter, president, medium, paparazzi){
+function clampRoleCounts(n, wolf, seer, hunter, president){
   wolf = Math.max(1, wolf);
   seer = Math.max(0, seer);
   hunter = Math.max(0, hunter);
   president = Math.min(1, Math.max(0, president));
-  medium = Math.max(0, medium);
-  paparazzi = Math.max(0, paparazzi);
-  let total = wolf + seer + hunter + president + medium + paparazzi;
-  // 超過分は パパラッチ→霊媒師→狩人→占い師→社長→人狼(1人は残す) の順に削る
-  while(total > n && paparazzi > 0){ paparazzi--; total--; }
-  while(total > n && medium > 0){ medium--; total--; }
+  let total = wolf + seer + hunter + president;
+  // 超過分は 狩人→占い師→社長→人狼(1人は残す) の順に削る
   while(total > n && hunter > 0){ hunter--; total--; }
   while(total > n && seer > 0){ seer--; total--; }
   while(total > n && president > 0){ president--; total--; }
   while(total > n && wolf > 1){ wolf--; total--; }
-  return {wolf, seer, hunter, president, medium, paparazzi};
+  return {wolf, seer, hunter, president};
 }
 
 /* ---------- state ---------- */
@@ -214,13 +215,11 @@ function freshSetup(){
     seerCount: 1,
     hunterCount: 1,
     presidentCount: 0,
-    mediumCount: 1,
-    paparazziCount: 0,
     names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     players: [],
     confirmIdx:0,
     confirmPhase:'call',
-    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null, paparazziTarget:null },
+    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null },
     lastHunterProtect:null,
     lastVictim:null,
     voteIdx:0,
@@ -229,15 +228,28 @@ function freshSetup(){
     lastExecuted:null,
     tieNote:false,
     executionNote:null,
-    pendingMediumReveal:null,
-    mediumPhase:'call',
-    winner:null
+    voteCandidates:null,   // 再投票時の投票対象(同率1位)のID配列。通常の投票ではnull
+    revoteRound:0,         // その日の再投票の回数
+    revoteInfo:null,
+    log:[],                // 全員に公開されている情報のみを記録する
+    setupError:null,
+    winner:null,
+    winReason:null
   };
 }
 state = freshSetup();
+const MAX_REVOTES = 3;     // 再投票でも決まらない場合の上限(超えたら抽選)
+
+function addLog(text, sub){ state.log.push({text, sub: sub||''}); }
+function renderLogPanel(){
+  if(state.screen==='setup' || state.log.length===0) return '';
+  const rows = [...state.log].reverse().map(e=>`
+    <div class="logrow">${escapeHtml(e.text)}${e.sub ? `<span class="logsub">${escapeHtml(e.sub)}</span>` : ''}</div>`).join('');
+  return `<div class="logpanel"><h4>公開ログ(新しい順)</h4>${rows}</div>`;
+}
 
 function alivePlayers(){ return state.players.filter(p=>p.alive); }
-function aliveWolfSide(){ return alivePlayers().filter(p=>p.role==='wolf' || p.role==='paparazzi'); }
+function aliveWolfSide(){ return alivePlayers().filter(p=>p.role==='wolf'); }
 function playerById(id){ return state.players.find(p=>p.id===id); }
 
 /* ---------- render dispatch ---------- */
@@ -249,7 +261,7 @@ function render(){
   else if(appMode === 'talk_theme'){ html = renderTalkThemeScreen(); }
   else if(appMode === 'survey_choice'){ html = renderSurveyChoiceScreen(); }
   else if(appMode === 'survey_free'){ html = renderSurveyFreeScreen(); }
-  else { html = renderJinroScreen(); }
+  else { html = renderJinroScreen() + renderLogPanel(); }
   app.innerHTML = html;
   window.scrollTo(0,0);
 }
@@ -259,8 +271,8 @@ function renderJinroScreen(){
     case 'confirm': return screenConfirm();
     case 'night': return screenNight();
     case 'morning': return screenMorning();
-    case 'medium_reveal': return screenMediumReveal();
     case 'day_vote': return screenVote();
+    case 'revote_notice': return screenRevoteNotice();
     case 'execution': return screenExecution();
     case 'gameover': return screenGameOver();
     default: return screenSetup();
@@ -426,45 +438,33 @@ function screenSetup(){
       <button onclick="changeRole('hunter',1)">+</button>
     </div>
 
-    <label>霊媒師の人数</label>
-    <div class="stepper">
-      <button onclick="changeRole('medium',-1)">−</button>
-      <div class="val">${state.mediumCount}</div>
-      <button onclick="changeRole('medium',1)">+</button>
-    </div>
-
-    <label>パパラッチの人数(人狼陣営の占い師)</label>
-    <div class="stepper">
-      <button onclick="changeRole('paparazzi',-1)">−</button>
-      <div class="val">${state.paparazziCount}</div>
-      <button onclick="changeRole('paparazzi',1)">+</button>
-    </div>
-
     <label>社長の人数(0〜1人)</label>
     <div class="stepper">
       <button onclick="changeRole('president',-1)">−</button>
       <div class="val">${state.presidentCount}</div>
       <button onclick="changeRole('president',1)">+</button>
     </div>
-    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount - state.mediumCount - state.paparazziCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 霊媒師 ${state.mediumCount}人 ・ パパラッチ ${state.paparazziCount}人 ・ 社長 ${state.presidentCount}人 ・ 人狼 ${state.wolfCount}人</p>
+    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 人狼 ${state.wolfCount}人</p>
 
     <label>参加者の名前</label>
     <div class="namegrid">${names}</div>
 
+    ${state.setupError ? `<p class="errtext">${escapeHtml(state.setupError)}</p>` : ''}
     <button class="btn btn-primary" onclick="startGame()">配役を決めて開始</button>
   </div>`;
 }
 function changeN(d){
   const n = Math.min(15, Math.max(5, state.n + d));
   if(n === state.n) return;
+  state.setupError = null;
   state.n = n;
   if(n > state.names.length){
     while(state.names.length < n) state.names.push('プレイヤー'+(state.names.length+1));
   } else {
     state.names = state.names.slice(0,n);
   }
-  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount, state.mediumCount, state.paparazziCount);
-  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president; state.mediumCount = c.medium; state.paparazziCount = c.paparazzi;
+  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount);
+  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president;
   render();
 }
 function changeRole(role, d){
@@ -472,27 +472,46 @@ function changeRole(role, d){
   const s = state.seerCount + (role==='seer'?d:0);
   const h = state.hunterCount + (role==='hunter'?d:0);
   const pr = state.presidentCount + (role==='president'?d:0);
-  const me = state.mediumCount + (role==='medium'?d:0);
-  const pp = state.paparazziCount + (role==='paparazzi'?d:0);
-  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1 || me < 0 || pp < 0) return;
-  if(w + s + h + pr + me + pp > state.n) return;
-  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr; state.mediumCount = me; state.paparazziCount = pp;
+  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1) return;
+  if(w + s + h + pr > state.n) return;
+  state.setupError = null;
+  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr;
   render();
 }
 function setName(i,v){ state.names[i] = v; }
 
 function startGame(){
-  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount, me = state.mediumCount, pp = state.paparazziCount;
+  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount;
+  const names = state.names.map((nm,i)=> nm.trim() || ('プレイヤー'+(i+1)));
+
+  // 名前に「山口」を含む参加者には人狼の役を与えない
+  const wolfEligible = names.map((_,i)=>i).filter(i=>!names[i].includes('山口'));
+  if(wolfEligible.length < w){
+    state.setupError = `人狼を割り当てられる参加者が足りません(候補${wolfEligible.length}人/人狼${w}人)。人狼の人数を減らしてください。`;
+    render();
+    return;
+  }
+  state.setupError = null;
+
+  // 人狼以外の役職を用意(足りない分は村人)
+  const others = [];
+  for(let i=0;i<s;i++) others.push('seer');
+  for(let i=0;i<h;i++) others.push('hunter');
+  for(let i=0;i<pr;i++) others.push('president');
+  while(others.length < n - w) others.push('villager');
+  shuffle(others);
+
+  // 人狼は「山口」を含まない参加者の中からランダムに選ぶ
+  const wolfPool = [...wolfEligible];
+  shuffle(wolfPool);
+  const wolfSet = new Set(wolfPool.slice(0, w));
   const roles = [];
-  for(let i=0;i<w;i++) roles.push('wolf');
-  for(let i=0;i<s;i++) roles.push('seer');
-  for(let i=0;i<h;i++) roles.push('hunter');
-  for(let i=0;i<pr;i++) roles.push('president');
-  for(let i=0;i<me;i++) roles.push('medium');
-  for(let i=0;i<pp;i++) roles.push('paparazzi');
-  while(roles.length < n) roles.push('villager');
-  shuffle(roles);
-  state.players = state.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role: roles[i], alive:true, deathCause:null}));
+  let k = 0;
+  for(let i=0;i<n;i++) roles.push(wolfSet.has(i) ? 'wolf' : others[k++]);
+
+  state.players = names.map((nm,i)=>({id:i, name: nm, role: roles[i], alive:true, deathCause:null}));
+  state.log = [];
+  addLog(`ゲーム開始(参加${n}人)`);
   state.confirmIdx = 0;
   state.confirmPhase = 'call';
   state.screen = 'confirm';
@@ -502,22 +521,39 @@ function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j = Math.floor(Mat
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /* ---------- CONFIRM ROLE (per-player, private) ---------- */
+/* 受け渡し画面の共通部品(名前入りの説明文) */
+function san(p){ return escapeHtml(p.name) + 'さん'; }
+function callScreen(eyebrow, p, onclickJs, buttonText){
+  // 端末を受け取った本人が押す画面
+  return `
+  <div class="panel callwrap">
+    ${eyebrow}
+    <div class="who">${san(p)}の番です</div>
+    <div class="msg">${san(p)}:端末を受け取ったら、周りの人に画面が見えないようにしてから、${san(p)}自身がボタンを押してください。</div>
+    <button class="btn btn-primary" onclick="${onclickJs}">${san(p)}です。${buttonText}</button>
+  </div>`;
+}
+function passScreen(eyebrow, from, to, onclickJs){
+  // 直前のプレイヤー(from)が押してから、次のプレイヤー(to)へ渡す画面
+  return `
+  <div class="panel callwrap">
+    ${eyebrow}
+    <div class="who">${san(from)}から${san(to)}へ</div>
+    <div class="msg">${san(from)}:下のボタンを押してから、端末を${san(to)}に渡してください。<br>${san(to)}:受け取ったら、次の画面で${san(to)}自身がボタンを押してください。</div>
+    <button class="btn btn-primary" onclick="${onclickJs}">${san(from)}:押して、${san(to)}に渡す</button>
+  </div>`;
+}
 function screenConfirm(){
   const p = state.players[state.confirmIdx];
+  const eyebrow = `<div class="eyebrow">配役の確認 ${state.confirmIdx+1} / ${state.players.length}</div>`;
   if(state.confirmPhase === 'call'){
-    return `
-    <div class="panel callwrap">
-      <div class="eyebrow">配役の確認 ${state.confirmIdx+1} / ${state.players.length}</div>
-      <div class="who">${escapeHtml(p.name)} さんの番です</div>
-      <div class="msg">他の人に見えないように、画面を自分だけで確認してください。</div>
-      <button class="btn btn-primary" onclick="confirmReveal()">役職を確認する</button>
-    </div>`;
+    return callScreen(eyebrow, p, 'confirmReveal()', '役職を確認する');
   }
   if(state.confirmPhase === 'reveal'){
     const r = ROLES[p.role];
     return `
     <div class="panel">
-      <div class="eyebrow">${escapeHtml(p.name)} さんの役職</div>
+      <div class="eyebrow">${san(p)}の役職</div>
       <div class="card3d">
         <div class="cardface">
           <div class="roleicon">${r.emoji}</div>
@@ -525,18 +561,15 @@ function screenConfirm(){
           <div class="roledesc">${r.desc}</div>
         </div>
       </div>
-      <button class="btn btn-primary" onclick="confirmDone()">確認した。画面を伏せる</button>
+      <button class="btn btn-primary" onclick="confirmDone()">${san(p)}:確認した</button>
     </div>`;
   }
-  // pass
-  const next = state.players[state.confirmIdx+1];
-  return `
-  <div class="panel callwrap">
-    <div class="eyebrow">受け渡し</div>
-    <div class="who">画面を伏せてください</div>
-    <div class="msg">${next ? '次は '+escapeHtml(next.name)+' さんに渡してください。' : '全員の確認が終わりました。夜が始まります。'}</div>
-    <button class="btn btn-primary" onclick="confirmAdvance()">${next ? '渡したら次へ' : '夜へ進む'}</button>
-  </div>`;
+  // pass: 最後の人の次は、夜の最初のプレイヤー(全員生存)
+  const next = state.players[state.confirmIdx+1] || state.players[0];
+  const eb = state.players[state.confirmIdx+1]
+    ? '<div class="eyebrow">受け渡し</div>'
+    : '<div class="eyebrow">全員の確認が終わりました。夜が始まります</div>';
+  return passScreen(eb, p, next, 'confirmAdvance()');
 }
 function confirmReveal(){ state.confirmPhase = 'reveal'; render(); }
 function confirmDone(){ state.confirmPhase = 'pass'; render(); }
@@ -561,7 +594,6 @@ function beginNight(){
   state.night.seerResult = null;
   state.night.hunterTarget = null;
   state.night.villagerDummy = null;
-  state.night.paparazziTarget = null;
   state.screen = 'night';
   render();
 }
@@ -573,18 +605,12 @@ function screenNight(){
   const phase = state.night.phase;
 
   if(phase === 'call'){
-    return `
-    <div class="panel callwrap">
-      ${moonMark()}
-      <div class="eyebrow">夜がふける ${state.night.qIdx+1} / ${state.night.queue.length}</div>
-      <div class="who">${escapeHtml(p.name)} さんの番です</div>
-      <div class="msg">他の人に見えないように、画面を自分だけで確認してください。</div>
-      <button class="btn btn-primary" onclick="nightAct()">確認する</button>
-    </div>`;
+    const eyebrow = `${moonMark()}<div class="eyebrow">夜がふける ${state.night.qIdx+1} / ${state.night.queue.length}</div>`;
+    return callScreen(eyebrow, p, 'nightAct()', '確認する');
   }
 
   if(phase === 'act'){
-    if(role === 'villager' || role === 'president' || role === 'medium'){
+    if(role === 'villager' || role === 'president'){
       const targets = state.players.filter(q=>q.id!==p.id);
       const rows = targets.map(q=>targetRow(q, state.night.villagerDummy, `pick('villagerDummy', ${q.id})`, null)).join('');
       return `
@@ -601,7 +627,6 @@ function screenNight(){
       const rows = targets.map(q=>{
         let disabledReason = null;
         if(q.alive && q.role==='wolf') disabledReason = '人狼';
-        // パパラッチは人狼陣営だが、人狼側からはその正体が分からない設定のため、通常のプレイヤーとして選択できる(誤って襲撃してしまう可能性がある)
         return targetRow(q, state.night.wolfTarget, `pick('wolfTarget', ${q.id})`, disabledReason);
       }).join('');
       return `
@@ -613,13 +638,13 @@ function screenNight(){
         <button class="btn btn-danger" ${state.night.wolfTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">この人を襲う</button>
       </div>`;
     }
-    if(role === 'seer' || role === 'paparazzi'){
-      const field = role==='paparazzi' ? 'paparazziTarget' : 'seerTarget';
+    if(role === 'seer'){
+      const field = 'seerTarget';
       const targets = state.players.filter(q=>q.id!==p.id);
       const rows = targets.map(q=>targetRow(q, state.night[field], `pick('${field}', ${q.id})`, null)).join('');
       return `
       <div class="panel">
-        <div class="eyebrow">${role==='paparazzi'?'パパラッチの目':'占い師の力'}</div>
+        <div class="eyebrow">占い師の力</div>
         <h3>誰を調べますか?</h3>
         <div class="playergrid">${rows}</div>
         <button class="btn btn-primary" ${state.night[field]===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">調べる</button>
@@ -640,8 +665,8 @@ function screenNight(){
   }
 
   if(phase === 'result'){
-    if(role === 'seer' || role === 'paparazzi'){
-      const field = role==='paparazzi' ? 'paparazziTarget' : 'seerTarget';
+    if(role === 'seer'){
+      const field = 'seerTarget';
       const t = playerById(state.night[field]);
       const isWolf = t.role === 'wolf';
       return `
@@ -653,30 +678,33 @@ function screenNight(){
             <div class="roledesc" style="font-size:18px; color:${isWolf?'#ffb3a4':'var(--silver)'}">${isWolf?'人狼である':'人狼ではない'}</div>
           </div>
         </div>
-        <button class="btn btn-primary" onclick="nightPass()">確認した。画面を伏せる</button>
+        <button class="btn btn-primary" onclick="nightPass()">${san(p)}:確認した</button>
       </div>`;
     }
-    // villager / wolf / hunter / 社長 / 霊媒師 は同じ見た目の確認画面(誰が何をしたか分からないようにする)
+    // villager / wolf / hunter / 社長 は同じ見た目の確認画面(誰が何をしたか分からないようにする)
     const label = role==='wolf' ? '選択を決めた' : role==='hunter' ? '選択を決めた' : '確認した';
     return `
     <div class="panel callwrap">
       <div class="who">${label}</div>
       <div class="msg">この画面の内容は誰にも明かさないでください。</div>
-      <button class="btn btn-primary" onclick="nightPass()">画面を伏せる</button>
+      <button class="btn btn-primary" onclick="nightPass()">${san(p)}:確認した</button>
     </div>`;
   }
 
   // phase === 'pass'
   const nextIdx = state.night.qIdx+1;
   const hasNext = nextIdx < state.night.queue.length;
-  const nextName = hasNext ? escapeHtml(playerById(state.night.queue[nextIdx]).name) : null;
+  if(hasNext){
+    const nextP = playerById(state.night.queue[nextIdx]);
+    return passScreen(`${moonMark()}<div class="eyebrow">受け渡し</div>`, p, nextP, 'nightAdvance()');
+  }
   return `
   <div class="panel callwrap">
     ${moonMark()}
-    <div class="eyebrow">受け渡し</div>
-    <div class="who">画面を伏せてください</div>
-    <div class="msg">${hasNext ? '次は '+nextName+' さんに端末を渡してください。' : '全員の確認が終わりました。夜が明けます。'}</div>
-    <button class="btn btn-primary" onclick="nightAdvance()">${hasNext ? '渡したら次へ' : '朝を迎える'}</button>
+    <div class="eyebrow">全員の行動が終わりました</div>
+    <div class="who">${san(p)}、夜が明けます</div>
+    <div class="msg">${san(p)}:下のボタンを押してから、端末を全員に見える場所に置いてください。</div>
+    <button class="btn btn-primary" onclick="nightAdvance()">${san(p)}:押して朝を迎える</button>
   </div>`;
 }
 function pick(field, id){ state.night[field] = id; render(); }
@@ -719,6 +747,9 @@ function resolveNight(){
   state.lastVictim = victimId;
   if(victimId !== null){ const v = playerById(victimId); v.alive = false; v.deathCause = 'killed'; }
   state.lastHunterProtect = hunterTarget;
+  // 公開情報のみ記録(誰が襲撃を指示したか・誰が守ったかは記録しない)
+  if(victimId !== null) addLog(`第${state.night.day}日の朝:${playerById(victimId).name}さんが襲撃された`);
+  else addLog(`第${state.night.day}日の朝:犠牲者はいなかった`);
   state.screen = 'morning';
   render();
 }
@@ -739,67 +770,61 @@ function screenMorning(){
   </div>`;
 }
 function afterMorning(){
-  const w = checkWin();
-  if(w){ state.winner = w; state.screen='gameover'; render(); return; }
-  const medium = state.players.find(p=>p.alive && p.role==='medium');
-  if(medium && state.pendingMediumReveal){
-    state.mediumPhase = 'call';
-    state.screen = 'medium_reveal';
-    render();
-  } else {
-    state.pendingMediumReveal = null;
-    beginVote();
-  }
+  // 襲撃の結果による勝敗判定
+  const r = checkWinAfterAttack();
+  if(r){ finishGame(r); return; }
+  beginVote();
 }
-function screenMediumReveal(){
-  const medium = state.players.find(p=>p.alive && p.role==='medium');
-  const info = state.pendingMediumReveal;
-  const phase = state.mediumPhase;
-  if(phase === 'call'){
-    return `
-    <div class="panel callwrap">
-      <div class="eyebrow">霊媒の刻</div>
-      <div class="who">${escapeHtml(medium.name)} さんの番です</div>
-      <div class="msg">他の人に見えないように、画面を自分だけで確認してください。</div>
-      <button class="btn btn-primary" onclick="mediumReveal()">確認する</button>
-    </div>`;
-  }
-  if(phase === 'reveal'){
-    const isWolf = info.wasWolf;
-    return `
-    <div class="panel">
-      <div class="card3d">
-        <div class="cardface">
-          <div class="roleicon">${isWolf?'🐺':'✨'}</div>
-          <div class="rolename">${escapeHtml(info.name)} さんは</div>
-          <div class="roledesc" style="font-size:18px; color:${isWolf?'#ffb3a4':'var(--silver)'}">${isWolf?'人狼だった':'人狼ではなかった'}</div>
-        </div>
-      </div>
-      <button class="btn btn-primary" onclick="mediumDone()">確認した。画面を伏せる</button>
-    </div>`;
-  }
-  // pass
-  return `
-  <div class="panel callwrap">
-    <div class="eyebrow">受け渡し</div>
-    <div class="who">画面を伏せてください</div>
-    <div class="msg">投票を始めます。端末を全員に見えるように置いてください。</div>
-    <button class="btn btn-primary" onclick="mediumAdvance()">投票へ進む</button>
-  </div>`;
-}
-function mediumReveal(){ state.mediumPhase = 'reveal'; render(); }
-function mediumDone(){ state.mediumPhase = 'pass'; render(); }
-function mediumAdvance(){ state.pendingMediumReveal = null; beginVote(); }
-function checkWin(){
+
+/* ---------- 勝敗判定 ----------
+   人狼陣営 = 人狼 / 村人陣営 = それ以外の生存者
+   ・人狼が全滅 → 村人陣営の勝利
+   ・襲撃の結果: 村人陣営の人数が人狼と同数以下 → 人狼陣営の勝利
+   ・追放の結果: 村人陣営の人数が人狼より少ない → 人狼陣営の勝利
+                 村人陣営の人数が人狼と同数、または人狼より1人多い状態で、狩人が生存していなければ → 人狼陣営の勝利
+                 (狩人が生存している場合は、護衛で襲撃を防げる可能性があるため続行) */
+function countSides(){
   const wolfSide = aliveWolfSide().length;
-  const others = alivePlayers().length - wolfSide;
-  if(wolfSide === 0) return 'villagers';
-  if(wolfSide >= others) return 'wolves';
+  return { wolfSide, villageSide: alivePlayers().length - wolfSide };
+}
+function checkWinAfterAttack(){
+  const {wolfSide, villageSide} = countSides();
+  if(wolfSide === 0) return {winner:'villagers', reason:'wolves_eliminated'};
+  if(villageSide <= wolfSide) return {winner:'wolves', reason:'attack_parity'};
   return null;
+}
+function checkWinAfterExecution(){
+  const {wolfSide, villageSide} = countSides();
+  if(wolfSide === 0) return {winner:'villagers', reason:'wolves_eliminated'};
+  if(villageSide < wolfSide) return {winner:'wolves', reason:'execution_below'};
+  const hunterAlive = state.players.some(p=>p.alive && p.role==='hunter');
+  if(!hunterAlive){
+    if(villageSide === wolfSide) return {winner:'wolves', reason:'execution_parity'};
+    if(villageSide === wolfSide + 1) return {winner:'wolves', reason:'execution_lead'};
+  }
+  return null;
+}
+function finishGame(result){
+  state.winner = result.winner;
+  state.winReason = result.reason;
+  addLog('ゲーム終了:' + (result.winner==='villagers' ? '村人陣営の勝利' : '人狼陣営の勝利'));
+  state.screen = 'gameover';
+  render();
 }
 
 /* ---------- DAY VOTE (open, public) ---------- */
 function beginVote(){
+  // その日の最初の投票(再投票の状態をリセット)
+  state.revoteRound = 0;
+  state.voteCandidates = null;
+  state.voteQueueIds = alivePlayers().map(p=>p.id);
+  state.voteIdx = 0;
+  state.votes = {};
+  state.screen = 'day_vote';
+  render();
+}
+function beginRevote(){
+  // 同率1位だけを対象にした再投票(投票するのは生存者全員)
   state.voteQueueIds = alivePlayers().map(p=>p.id);
   state.voteIdx = 0;
   state.votes = {};
@@ -809,15 +834,25 @@ function beginVote(){
 function screenVote(){
   const voterId = state.voteQueueIds[state.voteIdx];
   const voter = playerById(voterId);
+  const cands = state.voteCandidates;
   const targets = state.players.filter(p=>p.id !== voterId);
-  const rows = targets.map(p=>targetRow(p, state.votes[voterId], `castVote(${voterId}, ${p.id})`, null)).join('');
+  const rows = targets.map(p=>{
+    const reason = (cands && p.alive && !cands.includes(p.id)) ? '対象外' : null;
+    return targetRow(p, state.votes[voterId], `castVote(${voterId}, ${p.id})`, reason);
+  }).join('');
+  const eyebrow = cands
+    ? `再投票(${state.revoteRound}回目)・${state.voteIdx+1} / ${state.voteQueueIds.length}`
+    : `話し合い・投票 ${state.voteIdx+1} / ${state.voteQueueIds.length}`;
+  const hint = cands
+    ? `同率1位の ${cands.map(id=>escapeHtml(playerById(id).name)+'さん').join('・')} の中から選んでください。投票は公開で行います。`
+    : '投票は公開で行います。話し合ってから選んでください。';
   return `
   <div class="panel">
-    <div class="eyebrow">話し合い・投票 ${state.voteIdx+1} / ${state.voteQueueIds.length}</div>
-    <h3>${escapeHtml(voter.name)} さんは誰に投票しますか?</h3>
-    <p class="hint">投票は公開で行います。話し合ってから選んでください。</p>
+    <div class="eyebrow">${eyebrow}</div>
+    <h3>${san(voter)}は誰に投票しますか?</h3>
+    <p class="hint">${hint}</p>
     <div class="playergrid">${rows}</div>
-    <button class="btn btn-primary" ${state.votes[voterId]===undefined?'disabled style="opacity:.4"':''} onclick="voteAdvance()">投票を確定</button>
+    <button class="btn btn-primary" ${state.votes[voterId]===undefined?'disabled style="opacity:.4"':''} onclick="voteAdvance()">${san(voter)}の投票を確定</button>
   </div>`;
 }
 function castVote(voterId, targetId){ state.votes[voterId] = targetId; render(); }
@@ -839,9 +874,15 @@ function resolveVote(){
     else if(c === max){ leaders.push(id); }
   });
   state.tieNote = leaders.length > 1;
+  const day = state.night.day;
+
+  // 投票結果をログへ(得票数のみ。誰が誰に投票したかは記録しない)
+  const tallyText = Object.entries(tally).sort((a,b)=>b[1]-a[1])
+    .map(([id,c])=>`${playerById(Number(id)).name} ${c}票`).join(' / ');
+  addLog(`第${day}日 ${state.revoteRound>0 ? '再投票('+state.revoteRound+'回目)' : '投票'}結果:${tallyText}`);
 
   // 社長ルール: 最多得票が社長単独ならそのまま社長が追放される。
-  // そうでなければ、票数にかかわらず社長が投票したプレイヤーが追放される。
+  // そうでなければ、票数にかかわらず社長が投票したプレイヤーが追放される(この場合は再投票なし)。
   const president = state.players.find(p=>p.alive && p.role==='president');
   let executedId = null;
   let executionNote = null;
@@ -849,8 +890,23 @@ function resolveVote(){
     const target = state.votes[president.id];
     executedId = (target !== undefined) ? target : (leaders.length ? leaders[Math.floor(Math.random()*leaders.length)] : null);
     executionNote = 'president';
-  } else if(leaders.length){
+  } else if(leaders.length === 1){
+    executedId = leaders[0];
+    if(state.revoteRound > 0) executionNote = 'revote';
+  } else if(leaders.length > 1){
+    if(state.revoteRound < MAX_REVOTES){
+      // 同率1位が複数 → 同率1位だけを対象に再投票
+      state.revoteRound += 1;
+      state.voteCandidates = leaders;
+      state.revoteInfo = leaders.map(id=>({id, count: tally[id]}));
+      addLog(`第${day}日:同数のため再投票(${state.revoteRound}回目)`, '対象:' + leaders.map(id=>playerById(id).name).join('・'));
+      state.screen = 'revote_notice';
+      render();
+      return;
+    }
+    // 再投票を繰り返しても決まらない場合は、同率1位の中から抽選
     executedId = leaders[Math.floor(Math.random()*leaders.length)];
+    executionNote = 'random';
   }
 
   state.lastExecuted = executedId;
@@ -858,12 +914,25 @@ function resolveVote(){
   if(executedId !== null){
     const e = playerById(executedId);
     e.alive = false; e.deathCause = 'executed';
-    state.pendingMediumReveal = {name: e.name, wasWolf: e.role==='wolf'};
+    const noteText = executionNote==='president' ? '(社長の指名)' : executionNote==='revote' ? '(再投票の結果)' : executionNote==='random' ? '(再投票でも同数のため抽選)' : '';
+    addLog(`第${day}日:${e.name}さんが追放された${noteText}`);
   } else {
-    state.pendingMediumReveal = null;
+    addLog(`第${day}日:追放者なし`);
   }
   state.screen = 'execution';
   render();
+}
+function screenRevoteNotice(){
+  const rows = state.revoteInfo.map(x=>`
+    <div class="resultrow"><span class="rname">${escapeHtml(playerById(x.id).name)}さん</span><span class="small">${x.count}票</span></div>`).join('');
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">同数票</div>
+    <div class="who">再投票を行います(${state.revoteRound}回目)</div>
+    <div class="msg">同率1位の中から、追放する人を選び直します。<br>${state.revoteRound >= MAX_REVOTES ? '※ これでも決まらない場合は抽選で決定します。' : ''}</div>
+    <div class="resultlist" style="text-align:left;">${rows}</div>
+    <button class="btn btn-primary" style="margin-top:20px;" onclick="beginRevote()">再投票を始める</button>
+  </div>`;
 }
 
 /* ---------- EXECUTION RESULT ---------- */
@@ -875,14 +944,17 @@ function screenExecution(){
     ${p ? `
       <div class="who">${escapeHtml(p.name)} さん</div>
       <div class="msg">村の裁きにより、追放されました。正体はまだ明かされません。</div>
-      ${state.executionNote==='president' ? '<div class="hint">※ 社長の指名により追放が決定しました。</div>' : (state.tieNote ? '<div class="hint">※ 同数票のため、抽選で決定しました。</div>' : '')}
+      ${state.executionNote==='president' ? '<div class="hint">※ 社長の指名により追放が決定しました。</div>'
+        : state.executionNote==='revote' ? '<div class="hint">※ 再投票の結果、追放が決定しました。</div>'
+        : state.executionNote==='random' ? '<div class="hint">※ 再投票でも同数だったため、抽選で決定しました。</div>' : ''}
     ` : `<div class="who">追放者なし</div><div class="msg">票が入りませんでした。</div>`}
     <button class="btn btn-primary" style="margin-top:24px;" onclick="afterExecution()">続ける</button>
   </div>`;
 }
 function afterExecution(){
-  const w = checkWin();
-  if(w){ state.winner = w; state.screen='gameover'; render(); return; }
+  // 追放の結果による勝敗判定
+  const r = checkWinAfterExecution();
+  if(r){ finishGame(r); return; }
   state.night.day += 1;
   beginNight();
 }
@@ -890,7 +962,14 @@ function afterExecution(){
 /* ---------- GAME OVER ---------- */
 function screenGameOver(){
   const title = state.winner === 'villagers' ? '村人陣営の勝利' : '人狼陣営の勝利';
-  const sub = state.winner === 'villagers' ? '人狼陣営がすべて排除されました。' : '人狼陣営の数が村人陣営の数以上になりました。';
+  const subTexts = {
+    wolves_eliminated: '人狼陣営がすべて排除されました。',
+    attack_parity: '襲撃の結果、村人陣営の人数が人狼陣営と同数以下になりました。',
+    execution_below: '追放の結果、村人陣営の人数が人狼陣営より少なくなりました。',
+    execution_parity: '追放の結果、村人陣営の人数が人狼陣営と同数になり、狩人も不在のため、人狼陣営の勝利となります。',
+    execution_lead: '追放の結果、村人陣営が人狼陣営より1人多いだけとなり、狩人も不在のため、次の襲撃で人狼陣営の勝利が確定します。'
+  };
+  const sub = subTexts[state.winReason] || '';
   const rows = state.players.map(p=>{
     const r = ROLES[p.role];
     return `<div class="resultrow ${p.alive?'':'dead'}">
