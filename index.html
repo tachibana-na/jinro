@@ -990,7 +990,8 @@ function resolveVote(){
   if(president && !(leaders.length===1 && leaders[0]===president.id)){
     const target = state.votes[president.id];
     executedId = (target !== undefined) ? target : (leaders.length ? leaders[Math.floor(Math.random()*leaders.length)] : null);
-    executionNote = 'president';
+    // 社長の投票先が最多得票(同数トップ含む)に入っていなければ「社長指名により追放」
+    executionNote = leaders.includes(executedId) ? (leaders.length > 1 ? 'president_tiebreak' : null) : 'president';
   } else if(leaders.length === 1){
     executedId = leaders[0];
     if(state.revoteRound > 0) executionNote = 'revote';
@@ -1015,7 +1016,7 @@ function resolveVote(){
   if(executedId !== null){
     const e = playerById(executedId);
     e.alive = false; e.deathCause = 'executed';
-    const noteText = executionNote==='president' ? '(社長の指名)' : executionNote==='revote' ? '(再投票の結果)' : executionNote==='random' ? '(再投票でも同数のため抽選)' : '';
+    const noteText = executionNote==='president' ? '(社長指名により追放)' : executionNote==='president_tiebreak' ? '(同数票のため社長の投票先で決定)' : executionNote==='revote' ? '(再投票の結果)' : executionNote==='random' ? '(再投票でも同数のため抽選)' : '';
     const re = revealedRoleOf(e);
     addLog(`第${day}日:${e.name}さんが追放された${noteText}${re ? '(役職:'+re+')' : ''}`);
   } else {
@@ -1047,7 +1048,8 @@ function screenExecution(){
       <div class="who">${escapeHtml(p.name)} さん</div>
       <div class="msg">村の裁きにより、追放されました。${revealedRoleOf(p) ? '' : '正体はまだ明かされません。'}</div>
       ${revealedRoleOf(p) ? roleBadgeHtml(p) : ''}
-      ${state.executionNote==='president' ? '<div class="hint">※ 社長の指名により追放が決定しました。</div>'
+      ${state.executionNote==='president' ? '<div class="badge president" style="margin-top:10px;">🎩 社長指名により追放</div><div class="hint" style="margin-top:8px;">最多得票ではなく、社長が投票した人が追放されました。</div>'
+        : state.executionNote==='president_tiebreak' ? '<div class="hint">※ 同数票のため、社長の投票先で決定しました。</div>'
         : state.executionNote==='revote' ? '<div class="hint">※ 再投票の結果、追放が決定しました。</div>'
         : state.executionNote==='random' ? '<div class="hint">※ 再投票でも同数だったため、抽選で決定しました。</div>' : ''}
     ` : `<div class="who">追放者なし</div><div class="msg">票が入りませんでした。</div>`}
