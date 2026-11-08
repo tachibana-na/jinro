@@ -139,6 +139,9 @@ input[type=text]:focus{outline:1px solid var(--mist);}
 .badge.seer{color:var(--mist); border-color:rgba(111,147,201,0.4); background:rgba(111,147,201,0.08);}
 .badge.hunter{color:var(--silver); border-color:var(--line); background:rgba(205,214,229,0.06);}
 .badge.president{color:var(--emerald); border-color:rgba(111,207,151,0.45); background:rgba(111,207,151,0.09);}
+.badge.madman{color:#c9a8ff; border-color:rgba(169,139,217,0.5); background:rgba(169,139,217,0.1);}
+.lockedgrid{opacity:.45; pointer-events:none;}
+.lockhint{color:var(--amber);}
 
 .chipwrap{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;}
 .chip{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--bg-panel-lighter); border:1px solid var(--line); font-size:13px;}
@@ -184,23 +187,26 @@ const ROLES = {
   villager: {name:'村人',   emoji:'👤', cls:'villager', desc:'特別な力はない。話し合いと観察だけを頼りに、人狼を見つけ出せ。'},
   seer:     {name:'占い師', emoji:'🔮', cls:'seer',     desc:'夜ごとに一人を選び、その者が人狼かどうかを見抜くことができる。'},
   hunter:   {name:'狩人',   emoji:'🛡️', cls:'hunter',   desc:'夜ごとに一人を選び、人狼の凶刃から守ることができる。'},
-  president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'}
+  president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'},
+  madman:   {name:'狂人',   emoji:'🃏', cls:'madman',   desc:'あなたは人狼陣営だが、人狼が誰かは知らない。人狼もあなたが誰かを知らない。特別な能力はないが、人狼陣営の勝利のために村を惑わせ。'}
 };
 
 function calcWolfCount(n){ return Math.max(1, Math.floor(n/4)); }
 // 各役職の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
-function clampRoleCounts(n, wolf, seer, hunter, president){
+function clampRoleCounts(n, wolf, seer, hunter, president, madman){
   wolf = Math.max(1, wolf);
   seer = Math.max(0, seer);
   hunter = Math.max(0, hunter);
   president = Math.min(1, Math.max(0, president));
-  let total = wolf + seer + hunter + president;
-  // 超過分は 狩人→占い師→社長→人狼(1人は残す) の順に削る
+  madman = Math.max(0, madman);
+  let total = wolf + seer + hunter + president + madman;
+  // 超過分は 狂人→狩人→占い師→社長→人狼(1人は残す) の順に削る
+  while(total > n && madman > 0){ madman--; total--; }
   while(total > n && hunter > 0){ hunter--; total--; }
   while(total > n && seer > 0){ seer--; total--; }
   while(total > n && president > 0){ president--; total--; }
   while(total > n && wolf > 1){ wolf--; total--; }
-  return {wolf, seer, hunter, president};
+  return {wolf, seer, hunter, president, madman};
 }
 
 /* ---------- state ---------- */
@@ -215,11 +221,15 @@ function freshSetup(){
     seerCount: 1,
     hunterCount: 1,
     presidentCount: 0,
+    madmanCount: 0,
+    revealOnExecution: false,  // 追放されたプレイヤーの役職をその場で公開するか
+    revealOnAttack: false,     // 襲撃されたプレイヤーの役職をその場で公開するか
+    pendingQueue: null,        // 次の夜の行動順(ランダム)
     names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     players: [],
     confirmIdx:0,
     confirmPhase:'call',
-    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null },
+    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null, lockUntil:0 },
     lastHunterProtect:null,
     lastVictim:null,
     voteIdx:0,
@@ -444,7 +454,26 @@ function screenSetup(){
       <div class="val">${state.presidentCount}</div>
       <button onclick="changeRole('president',1)">+</button>
     </div>
-    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 人狼 ${state.wolfCount}人</p>
+
+    <label>狂人の人数(人狼陣営・能力なし)</label>
+    <div class="stepper">
+      <button onclick="changeRole('madman',-1)">−</button>
+      <div class="val">${state.madmanCount}</div>
+      <button onclick="changeRole('madman',1)">+</button>
+    </div>
+    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount - state.madmanCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 狂人 ${state.madmanCount}人 ・ 人狼 ${state.wolfCount}人</p>
+
+    <label>追放されたプレイヤーの役職</label>
+    <div class="row" style="gap:8px; margin-bottom:14px;">
+      <button class="btn ${state.revealOnExecution?'':'btn-primary'}" style="margin:0;" onclick="setReveal('execution', false)">公開しない</button>
+      <button class="btn ${state.revealOnExecution?'btn-primary':''}" style="margin:0;" onclick="setReveal('execution', true)">公開する</button>
+    </div>
+    <label>襲撃されたプレイヤーの役職</label>
+    <div class="row" style="gap:8px; margin-bottom:6px;">
+      <button class="btn ${state.revealOnAttack?'':'btn-primary'}" style="margin:0;" onclick="setReveal('attack', false)">公開しない</button>
+      <button class="btn ${state.revealOnAttack?'btn-primary':''}" style="margin:0;" onclick="setReveal('attack', true)">公開する</button>
+    </div>
+    <p class="hint">「公開する」にすると、その場の発表・公開ログ・プレイヤー一覧のラベルに役職が表示されます。</p>
 
     <label>参加者の名前</label>
     <div class="namegrid">${names}</div>
@@ -463,8 +492,8 @@ function changeN(d){
   } else {
     state.names = state.names.slice(0,n);
   }
-  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount);
-  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president;
+  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount, state.madmanCount);
+  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president; state.madmanCount = c.madman;
   render();
 }
 function changeRole(role, d){
@@ -472,16 +501,22 @@ function changeRole(role, d){
   const s = state.seerCount + (role==='seer'?d:0);
   const h = state.hunterCount + (role==='hunter'?d:0);
   const pr = state.presidentCount + (role==='president'?d:0);
-  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1) return;
-  if(w + s + h + pr > state.n) return;
+  const md = state.madmanCount + (role==='madman'?d:0);
+  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1 || md < 0) return;
+  if(w + s + h + pr + md > state.n) return;
   state.setupError = null;
-  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr;
+  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr; state.madmanCount = md;
+  render();
+}
+function setReveal(kind, on){
+  if(kind === 'execution') state.revealOnExecution = on;
+  else state.revealOnAttack = on;
   render();
 }
 function setName(i,v){ state.names[i] = v; }
 
 function startGame(){
-  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount;
+  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount, md = state.madmanCount;
   const names = state.names.map((nm,i)=> nm.trim() || ('プレイヤー'+(i+1)));
 
   // 名前に「山口」を含む参加者には人狼の役を与えない
@@ -498,6 +533,7 @@ function startGame(){
   for(let i=0;i<s;i++) others.push('seer');
   for(let i=0;i<h;i++) others.push('hunter');
   for(let i=0;i<pr;i++) others.push('president');
+  for(let i=0;i<md;i++) others.push('madman');
   while(others.length < n - w) others.push('villager');
   shuffle(others);
 
@@ -512,6 +548,7 @@ function startGame(){
   state.players = names.map((nm,i)=>({id:i, name: nm, role: roles[i], alive:true, deathCause:null}));
   state.log = [];
   addLog(`ゲーム開始(参加${n}人)`);
+  state.pendingQueue = shuffledAliveIds();
   state.confirmIdx = 0;
   state.confirmPhase = 'call';
   state.screen = 'confirm';
@@ -565,7 +602,7 @@ function screenConfirm(){
     </div>`;
   }
   // pass: 最後の人の次は、夜の最初のプレイヤー(全員生存)
-  const next = state.players[state.confirmIdx+1] || state.players[0];
+  const next = state.players[state.confirmIdx+1] || playerById(state.pendingQueue[0]);
   const eb = state.players[state.confirmIdx+1]
     ? '<div class="eyebrow">受け渡し</div>'
     : '<div class="eyebrow">全員の確認が終わりました。夜が始まります</div>';
@@ -585,8 +622,9 @@ function confirmAdvance(){
 
 /* ---------- NIGHT ---------- */
 function beginNight(){
-  // 全プレイヤーが同じ手順で端末を回す(誰が特別な役職か分からないようにするため)
-  state.night.queue = alivePlayers().map(p=>p.id);
+  // 全プレイヤーが同じ手順で端末を回す(誰が特別な役職か分からないようにするため)。順番は毎晩ランダム
+  state.night.queue = state.pendingQueue || shuffledAliveIds();
+  state.pendingQueue = null;
   state.night.qIdx = 0;
   state.night.phase = 'call';
   state.night.wolfTarget = null;
@@ -596,6 +634,47 @@ function beginNight(){
   state.night.villagerDummy = null;
   state.screen = 'night';
   render();
+}
+function shuffledAliveIds(){
+  const q = alivePlayers().map(p=>p.id);
+  shuffle(q);
+  return q;
+}
+/* 行動画面(プレイヤーを選ぶ画面)は表示から5秒間ボタンを押せない。
+   役職によって操作にかかる時間が違うことで、役職が推測されるのを防ぐ。 */
+const ACT_LOCK_MS = 5000;
+let actLockTimer = null;
+function actLocked(){ return state.screen==='night' && state.night.phase==='act' && Date.now() < (state.night.lockUntil||0); }
+function startActLock(){
+  state.night.lockUntil = Date.now() + ACT_LOCK_MS;
+  if(actLockTimer) clearInterval(actLockTimer);
+  actLockTimer = setInterval(tickActLock, 200);
+}
+function tickActLock(){
+  if(!(state.screen==='night' && state.night.phase==='act')){ clearInterval(actLockTimer); actLockTimer = null; return; }
+  const remain = (state.night.lockUntil||0) - Date.now();
+  const hint = document.getElementById('lockhint');
+  if(remain > 0){
+    if(hint) hint.textContent = `あと${Math.ceil(remain/1000)}秒で選べるようになります`;
+    return;
+  }
+  clearInterval(actLockTimer); actLockTimer = null;
+  if(hint) hint.remove();
+  const grid = document.getElementById('actgrid');
+  if(grid) grid.classList.remove('lockedgrid');
+  const btn = document.getElementById('actDecideBtn');
+  if(btn){
+    const f = btn.getAttribute('data-field');
+    const needTarget = f && state.night[f] === null;
+    btn.disabled = !!needTarget;
+    btn.style.opacity = needTarget ? '.4' : '1';
+  }
+}
+function actGridAttrs(){ return `id="actgrid" class="playergrid${actLocked() ? ' lockedgrid' : ''}"`; }
+function actHint(){ return actLocked() ? `<p class="hint lockhint" id="lockhint">あと${Math.ceil(((state.night.lockUntil||0)-Date.now())/1000)}秒で選べるようになります</p>` : ''; }
+function actBtnAttrs(field){
+  const dis = actLocked() || (field && state.night[field] === null);
+  return `id="actDecideBtn" data-field="${field}" ${dis ? 'disabled style="opacity:.4"' : ''}`;
 }
 function aliveOfRole(role){ return state.players.find(p=>p.alive && p.role===role); }
 
@@ -610,7 +689,7 @@ function screenNight(){
   }
 
   if(phase === 'act'){
-    if(role === 'villager' || role === 'president'){
+    if(role === 'villager' || role === 'president' || role === 'madman'){
       const targets = state.players.filter(q=>q.id!==p.id);
       const rows = targets.map(q=>targetRow(q, state.night.villagerDummy, `pick('villagerDummy', ${q.id})`, null)).join('');
       return `
@@ -618,8 +697,9 @@ function screenNight(){
         <div class="eyebrow">夜の行動</div>
         <h3>誰かを選んでください</h3>
         <p class="hint">あなたには特別な夜の行動はありません。この選択に意味はありません。誰でもよいので一人選んで進んでください。</p>
-        <div class="playergrid">${rows}</div>
-        <button class="btn btn-primary" ${state.night.villagerDummy===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">決定</button>
+        ${actHint()}
+        <div ${actGridAttrs()}>${rows}</div>
+        <button class="btn btn-primary" ${actBtnAttrs('villagerDummy')} onclick="nightConfirmAct()">決定</button>
       </div>`;
     }
     if(role === 'wolf'){
@@ -634,8 +714,9 @@ function screenNight(){
         <div class="eyebrow">人狼の襲撃先</div>
         <h3>誰を襲いますか?</h3>
         <p class="hint">あなたより先に他の人狼が襲撃先を選んでいれば、それに従うか襲撃先を変えることが出来ます。最後の人狼が選んだプレイヤーを襲撃します。</p>
-        <div class="playergrid">${rows}</div>
-        <button class="btn btn-danger" ${state.night.wolfTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">この人を襲う</button>
+        ${actHint()}
+        <div ${actGridAttrs()}>${rows}</div>
+        <button class="btn btn-danger" ${actBtnAttrs('wolfTarget')} onclick="nightConfirmAct()">この人を襲う</button>
       </div>`;
     }
     if(role === 'seer'){
@@ -646,8 +727,9 @@ function screenNight(){
       <div class="panel">
         <div class="eyebrow">占い師の力</div>
         <h3>誰を調べますか?</h3>
-        <div class="playergrid">${rows}</div>
-        <button class="btn btn-primary" ${state.night[field]===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">調べる</button>
+        ${actHint()}
+        <div ${actGridAttrs()}>${rows}</div>
+        <button class="btn btn-primary" ${actBtnAttrs(field)} onclick="nightConfirmAct()">調べる</button>
       </div>`;
     }
     // hunter(自分自身も対象に含む)
@@ -659,8 +741,9 @@ function screenNight(){
     <div class="panel">
       <div class="eyebrow">狩人の力</div>
       <h3>誰を守りますか?</h3>
-      <div class="playergrid">${rows}</div>
-      <button class="btn btn-primary" ${state.night.hunterTarget===null?'disabled style="opacity:.4"':''} onclick="nightConfirmAct()">守る</button>
+      ${actHint()}
+      <div ${actGridAttrs()}>${rows}</div>
+      <button class="btn btn-primary" ${actBtnAttrs('hunterTarget')} onclick="nightConfirmAct()">守る</button>
     </div>`;
   }
 
@@ -707,8 +790,21 @@ function screenNight(){
     <button class="btn btn-primary" onclick="nightAdvance()">${san(p)}:押して朝を迎える</button>
   </div>`;
 }
-function pick(field, id){ state.night[field] = id; render(); }
-function deathStatus(q){ return q.deathCause==='executed' ? '追放' : '死亡'; }
+function pick(field, id){ if(actLocked()) return; state.night[field] = id; render(); }
+// 設定で「公開する」にしている退場理由の場合のみ、役職名を返す(それ以外はnull)
+function revealedRoleOf(q){
+  const on = (q.deathCause==='executed' && state.revealOnExecution) || (q.deathCause==='killed' && state.revealOnAttack);
+  return on ? ROLES[q.role].name : null;
+}
+function roleBadgeHtml(q){
+  const r = ROLES[q.role];
+  return `<div class="badge ${r.cls}" style="margin-top:8px;">${r.emoji} ${r.name}だった</div>`;
+}
+function deathStatus(q){
+  const base = q.deathCause==='executed' ? '追放' : '死亡';
+  const r = revealedRoleOf(q);
+  return r ? `${base}(${r})` : base;
+}
 function targetRow(q, selectedId, onclickJs, disabledReason, note){
   let status = null, disabled = false;
   if(!q.alive){ status = deathStatus(q); disabled = true; }
@@ -723,8 +819,8 @@ function targetRow(q, selectedId, onclickJs, disabledReason, note){
     ${tag}
   </div>`;
 }
-function nightAct(){ state.night.phase = 'act'; render(); }
-function nightConfirmAct(){ state.night.phase = 'result'; render(); }
+function nightAct(){ state.night.phase = 'act'; startActLock(); render(); }
+function nightConfirmAct(){ if(actLocked()) return; state.night.phase = 'result'; render(); }
 function nightPass(){ state.night.phase = 'pass'; render(); }
 function nightAdvance(){
   const nextIdx = state.night.qIdx+1;
@@ -748,7 +844,11 @@ function resolveNight(){
   if(victimId !== null){ const v = playerById(victimId); v.alive = false; v.deathCause = 'killed'; }
   state.lastHunterProtect = hunterTarget;
   // 公開情報のみ記録(誰が襲撃を指示したか・誰が守ったかは記録しない)
-  if(victimId !== null) addLog(`第${state.night.day}日の朝:${playerById(victimId).name}さんが襲撃された`);
+  if(victimId !== null){
+    const v = playerById(victimId);
+    const rv = revealedRoleOf(v);
+    addLog(`第${state.night.day}日の朝:${v.name}さんが襲撃された${rv ? '(役職:'+rv+')' : ''}`);
+  }
   else addLog(`第${state.night.day}日の朝:犠牲者はいなかった`);
   state.screen = 'morning';
   render();
@@ -758,7 +858,7 @@ function resolveNight(){
 function screenMorning(){
   const v = state.lastVictim !== null ? playerById(state.lastVictim) : null;
   const body = v
-    ? `<div class="msg">${escapeHtml(v.name)} さんが、無惨な姿で発見されました。</div>`
+    ? `<div class="msg">${escapeHtml(v.name)} さんが、無惨な姿で発見されました。</div>${revealedRoleOf(v) ? roleBadgeHtml(v) : ''}`
     : `<div class="msg">今夜、犠牲者はいませんでした。誰かが守り抜いたようです。</div>`;
   return `
   <div class="panel callwrap">
@@ -777,7 +877,8 @@ function afterMorning(){
 }
 
 /* ---------- 勝敗判定 ----------
-   人狼陣営 = 人狼 / 村人陣営 = それ以外の生存者
+   人数の数え方: 人狼 = 役職が人狼の生存者 / 村人陣営 = それ以外の生存者(狂人は人数の上では村人側に数える)
+   ※ 狂人は人狼陣営として勝敗を共にする(人狼陣営が勝てば狂人も勝ち)
    ・人狼が全滅 → 村人陣営の勝利
    ・襲撃の結果: 村人陣営の人数が人狼と同数以下 → 人狼陣営の勝利
    ・追放の結果: 村人陣営の人数が人狼より少ない → 人狼陣営の勝利
@@ -915,7 +1016,8 @@ function resolveVote(){
     const e = playerById(executedId);
     e.alive = false; e.deathCause = 'executed';
     const noteText = executionNote==='president' ? '(社長の指名)' : executionNote==='revote' ? '(再投票の結果)' : executionNote==='random' ? '(再投票でも同数のため抽選)' : '';
-    addLog(`第${day}日:${e.name}さんが追放された${noteText}`);
+    const re = revealedRoleOf(e);
+    addLog(`第${day}日:${e.name}さんが追放された${noteText}${re ? '(役職:'+re+')' : ''}`);
   } else {
     addLog(`第${day}日:追放者なし`);
   }
@@ -943,7 +1045,8 @@ function screenExecution(){
     <div class="eyebrow">処刑</div>
     ${p ? `
       <div class="who">${escapeHtml(p.name)} さん</div>
-      <div class="msg">村の裁きにより、追放されました。正体はまだ明かされません。</div>
+      <div class="msg">村の裁きにより、追放されました。${revealedRoleOf(p) ? '' : '正体はまだ明かされません。'}</div>
+      ${revealedRoleOf(p) ? roleBadgeHtml(p) : ''}
       ${state.executionNote==='president' ? '<div class="hint">※ 社長の指名により追放が決定しました。</div>'
         : state.executionNote==='revote' ? '<div class="hint">※ 再投票の結果、追放が決定しました。</div>'
         : state.executionNote==='random' ? '<div class="hint">※ 再投票でも同数だったため、抽選で決定しました。</div>' : ''}
@@ -963,13 +1066,14 @@ function afterExecution(){
 function screenGameOver(){
   const title = state.winner === 'villagers' ? '村人陣営の勝利' : '人狼陣営の勝利';
   const subTexts = {
-    wolves_eliminated: '人狼陣営がすべて排除されました。',
+    wolves_eliminated: '人狼がすべて排除されました。',
     attack_parity: '襲撃の結果、村人陣営の人数が人狼陣営と同数以下になりました。',
     execution_below: '追放の結果、村人陣営の人数が人狼陣営より少なくなりました。',
     execution_parity: '追放の結果、村人陣営の人数が人狼陣営と同数になり、狩人も不在のため、人狼陣営の勝利となります。',
     execution_lead: '追放の結果、村人陣営が人狼陣営より1人多いだけとなり、狩人も不在のため、次の襲撃で人狼陣営の勝利が確定します。'
   };
-  const sub = subTexts[state.winReason] || '';
+  const madNote = (state.winner==='wolves' && state.players.some(p=>p.role==='madman')) ? ' 狂人も人狼陣営として勝利です。' : '';
+  const sub = (subTexts[state.winReason] || '') + madNote;
   const rows = state.players.map(p=>{
     const r = ROLES[p.role];
     return `<div class="resultrow ${p.alive?'':'dead'}">
