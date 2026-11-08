@@ -146,6 +146,8 @@ input[type=text]:focus{outline:1px solid var(--mist);}
 .chipwrap{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;}
 .chip{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--bg-panel-lighter); border:1px solid var(--line); font-size:13px;}
 .chip .x{cursor:pointer; color:var(--silver-dim);}
+.chip.pick{cursor:pointer; padding:9px 16px; font-size:14px;}
+.chip.sel{border-color:var(--amber); background:rgba(217,164,65,0.16); color:var(--silver);}
 .backlink{display:inline-block; background:none; border:none; color:var(--silver-dim); font-size:12px; cursor:pointer; margin-bottom:16px; padding:0; font-family:var(--font-body);}
 .menubtn{text-align:left;}
 .menubtn .sub{display:block; font-size:12px; font-weight:400; color:rgba(255,255,255,0.75); margin-top:2px;}
@@ -269,6 +271,7 @@ function render(){
   if(appMode === 'top'){ html = screenTop(); }
   else if(appMode === 'lottery'){ html = renderLotteryScreen(); }
   else if(appMode === 'talk_theme'){ html = renderTalkThemeScreen(); }
+  else if(appMode === 'insider'){ html = renderInsiderScreen(); }
   else if(appMode === 'survey_choice'){ html = renderSurveyChoiceScreen(); }
   else if(appMode === 'survey_free'){ html = renderSurveyFreeScreen(); }
   else { html = renderJinroScreen() + renderLogPanel(); }
@@ -298,6 +301,7 @@ function screenTop(){
     <p class="lead">端末を1台、参加者で回して遊べるミニゲーム集です。</p>
     <button class="btn btn-primary menubtn" onclick="enterJinro()">🐺 人狼<span class="sub">正体を隠して村を守れ・話し合いと投票のゲーム</span></button>
     <button class="btn btn-primary menubtn" onclick="enterLottery()">🎯 抽選<span class="sub">入力した候補からランダムに選ぶ・チーム分けも可能</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterInsider()">🕵️ インサイダーゲーム<span class="sub">お題を当てながら、お題を知る裏切り者を探す</span></button>
     <button class="btn btn-primary menubtn" onclick="enterTalkTheme()">💬 トークテーマ<span class="sub">会話のきっかけになるお題をランダムに引く</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyChoice()">🗳️ アンケート(選択式)<span class="sub">選択肢から選んでもらい、匿名で集計</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyFree()">✏️ アンケート(自由入力)<span class="sub">自由記述で回答してもらい、匿名で一覧表示</span></button>
@@ -1520,6 +1524,296 @@ function screenSurveyFreeResults(){
     <button class="btn btn-primary" onclick="enterSurveyFree()">もう一度アンケートする</button>
   </div>`;
 }
+
+/* ==================== INSIDER GAME ==================== */
+const INSIDER_GENRES = {
+  all:    {label:'おまかせ(全ジャンル)', words:[]},
+  food:   {label:'食べ物', words:['カレーライス','ラーメン','寿司','たこ焼き','おにぎり','ハンバーグ','餃子','お好み焼き','天ぷら','うどん','唐揚げ','オムライス','ピザ','シチュー','味噌汁','焼肉','カツ丼','親子丼','サンドイッチ','パンケーキ','ショートケーキ','プリン','アイスクリーム','チョコレート','せんべい','納豆','卵焼き','ポテトチップス','牛丼','焼き鳥']},
+  animal: {label:'動物', words:['ゾウ','キリン','ライオン','パンダ','ペンギン','イルカ','クジラ','ウサギ','カンガルー','コアラ','サル','ゴリラ','ワニ','カメ','ヘビ','フクロウ','ハリネズミ','ラッコ','シロクマ','ネコ','イヌ','ハムスター','カバ','シマウマ','ラクダ','タヌキ','キツネ','カエル','カブトムシ','ハチ']},
+  place:  {label:'場所・名所', words:['東京タワー','スカイツリー','富士山','京都','北海道','沖縄','大阪城','金閣寺','奈良の大仏','動物園','水族館','遊園地','図書館','空港','温泉','神社','学校','病院','駅','公園','映画館','海','砂漠','エッフェル塔','自由の女神','ピラミッド','万里の長城','ジャングル','火山','無人島']},
+  sports: {label:'スポーツ・趣味', words:['サッカー','野球','テニス','バスケットボール','バレーボール','卓球','ゴルフ','水泳','マラソン','スキー','スノーボード','柔道','剣道','相撲','ボクシング','ラグビー','バドミントン','体操','スケート','サーフィン','ボウリング','弓道','ヨガ','ダンス','登山','釣り','キャンプ','写真','読書','カラオケ']},
+  vehicle:{label:'乗り物', words:['新幹線','飛行機','自転車','バス','タクシー','電車','船','ヘリコプター','ロケット','救急車','消防車','パトカー','ロープウェイ','地下鉄','モノレール','スクーター','気球','潜水艦','トラック','フェリー','人力車','ヨット','ジェットコースター','観覧車','リニアモーターカー']},
+  job:    {label:'職業', words:['医者','先生','警察官','消防士','パイロット','料理人','美容師','大工','弁護士','漫画家','歌手','農家','看護師','運転手','宇宙飛行士','野球選手','花屋','パン屋','郵便配達員','獣医','建築家','俳優','声優','保育士','漁師','画家','作家','プログラマー','忍者','探偵']},
+  goods:  {label:'身の回りの物', words:['歯ブラシ','傘','腕時計','財布','眼鏡','冷蔵庫','掃除機','電子レンジ','洗濯機','ハサミ','ホッチキス','消しゴム','鉛筆','スマートフォン','テレビ','枕','布団','鍵','マスク','ティッシュ','電卓','ドライヤー','包丁','フライパン','鏡','懐中電灯','リモコン','目覚まし時計','靴','帽子']},
+  event:  {label:'季節・行事', words:['お正月','節分','ひな祭り','お花見','七夕','夏祭り','花火','お盆','運動会','お月見','ハロウィン','クリスマス','大晦日','初詣','海水浴','紅葉狩り','雪だるま','こいのぼり','成人式','卒業式','入学式','文化祭','誕生日','バレンタインデー','遠足']}
+};
+const INSIDER_ROLES = {
+  master:  {name:'マスター',     emoji:'🎙️', desc:'あなたはお題を知っています。市民からの質問には「はい」「いいえ」「わからない」だけで答えてください。お題を知っている人がもう1人(インサイダー)います。', hasWord:true},
+  insider: {name:'インサイダー', emoji:'🕵️', desc:'あなたはお題を知っています。それを悟られないように市民として振る舞い、さりげなく正解へ導いてください。', hasWord:true},
+  citizen: {name:'市民',         emoji:'👥', desc:'あなたはお題を知りません。マスターに「はい」「いいえ」で答えられる質問をして、制限時間内にお題を当ててください。', hasWord:false}
+};
+let INSIDER_EXTEND_MS = 60000;   // 「延長」で増える時間
+let insiderUsedWords = new Set(); // 同じセッション内で同じお題が続かないようにする
+let insiderTimer = null;
+let insiderAudioCtx = null;
+
+function freshInsider(){
+  const n = 6;
+  return {
+    phase:'setup', n, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
+    genre:'all', minutes:5,
+    players:[], word:'', wordGenreLabel:'', idx:0, subPhase:'call',
+    endAt:0, segmentMs:0, extensions:0, revealRoles:false
+  };
+}
+let insiderState = freshInsider();
+function enterInsider(){
+  if(insiderTimer){ clearInterval(insiderTimer); insiderTimer = null; }
+  appMode = 'insider';
+  insiderState = freshInsider();
+  render();
+}
+function renderInsiderScreen(){
+  const s = insiderState;
+  if(s.phase === 'setup') return screenInsiderSetup();
+  if(s.phase === 'confirm') return screenInsiderConfirm();
+  if(s.phase === 'countdown') return screenInsiderCountdown();
+  if(s.phase === 'timeup') return screenInsiderTimeup();
+  return screenInsiderAnswer();
+}
+
+/* ---- setup ---- */
+function screenInsiderSetup(){
+  const s = insiderState;
+  const genreChips = Object.entries(INSIDER_GENRES).map(([k,g])=>`<span class="chip pick ${s.genre===k?'sel':''}" onclick="setInsiderGenre('${k}')">${g.label}</span>`).join('');
+  const minChips = [3,5,7,10].map(m=>`<span class="chip pick ${s.minutes===m?'sel':''}" onclick="setInsiderMinutes(${m})">${m}分</span>`).join('');
+  const nameRows = s.names.map((nm,i)=>`
+    <div class="nameitem"><div class="idx">${i+1}</div><input type="text" value="${escapeHtml(nm)}" oninput="setInsiderName(${i}, this.value)"></div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">インサイダーゲーム</div>
+    <h1>ゲームの準備</h1>
+    <p class="lead">マスター1人とインサイダー1人だけがお題を知っています。市民はマスターに「はい/いいえ」で答えられる質問をして、制限時間内にお題を当てます。</p>
+
+    <label>参加人数(3〜20人)</label>
+    <div class="stepper">
+      <button onclick="changeInsiderN(-1)">−</button>
+      <div class="val">${s.n}</div>
+      <button onclick="changeInsiderN(1)">+</button>
+    </div>
+
+    <label>お題のジャンル</label>
+    <div class="chipwrap">${genreChips}</div>
+
+    <label>制限時間</label>
+    <div class="chipwrap">${minChips}</div>
+
+    <label>参加者の名前</label>
+    <div class="namegrid">${nameRows}</div>
+
+    <button class="btn btn-primary" onclick="startInsider()">ゲーム開始</button>
+  </div>`;
+}
+function setInsiderGenre(k){ insiderState.genre = k; render(); }
+function setInsiderMinutes(m){ insiderState.minutes = m; render(); }
+function setInsiderName(i,v){ insiderState.names[i] = v; }
+function changeInsiderN(d){
+  const s = insiderState;
+  const n = Math.min(20, Math.max(3, s.n + d));
+  if(n === s.n) return;
+  s.n = n;
+  if(n > s.names.length){ while(s.names.length < n) s.names.push('プレイヤー'+(s.names.length+1)); }
+  else s.names = s.names.slice(0, n);
+  render();
+}
+function pickInsiderWord(genreKey){
+  const pool = genreKey === 'all'
+    ? Object.entries(INSIDER_GENRES).filter(([k])=>k!=='all').flatMap(([k,g])=>g.words.map(w=>({w, label:g.label})))
+    : INSIDER_GENRES[genreKey].words.map(w=>({w, label:INSIDER_GENRES[genreKey].label}));
+  let cands = pool.filter(x=>!insiderUsedWords.has(x.w));
+  if(cands.length === 0){ pool.forEach(x=>insiderUsedWords.delete(x.w)); cands = pool; }
+  const pick = cands[Math.floor(Math.random()*cands.length)];
+  insiderUsedWords.add(pick.w);
+  return pick;
+}
+function startInsider(){
+  const s = insiderState;
+  const players = s.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role:'citizen'}));
+  const order = players.map((_,i)=>i);
+  shuffle(order);
+  players[order[0]].role = 'master';
+  players[order[1]].role = 'insider';
+  const pick = pickInsiderWord(s.genre);
+  s.players = players;
+  s.word = pick.w;
+  s.wordGenreLabel = pick.label;
+  s.idx = 0;
+  s.subPhase = 'call';
+  s.extensions = 0;
+  s.revealRoles = false;
+  s.phase = 'confirm';
+  render();
+}
+
+/* ---- role confirmation (1人ずつ端末を回す) ---- */
+function screenInsiderConfirm(){
+  const s = insiderState;
+  const p = s.players[s.idx];
+  const isLast = s.idx === s.players.length - 1;
+  const eyebrow = `<div class="eyebrow">役職の確認 ${s.idx+1} / ${s.players.length}</div>`;
+  if(s.subPhase === 'call'){
+    return callScreen(eyebrow, p, 'insiderReveal()', '役職を確認する');
+  }
+  if(s.subPhase === 'reveal'){
+    const r = INSIDER_ROLES[p.role];
+    return `
+    <div class="panel">
+      <div class="eyebrow">${san(p)}の役職</div>
+      <div class="card3d">
+        <div class="cardface">
+          <div class="roleicon">${r.emoji}</div>
+          <div class="rolename">${r.name}</div>
+          <div class="roledesc">${r.desc}</div>
+          ${r.hasWord ? `
+            <div class="divider" style="width:100%;"></div>
+            <div class="small">お題(${escapeHtml(s.wordGenreLabel)})</div>
+            <div class="rolename" style="font-size:30px;">${escapeHtml(s.word)}</div>
+          ` : `<div class="hint" style="margin-top:10px;">お題は知らされていません</div>`}
+        </div>
+      </div>
+      ${isLast ? `<p class="hint">このボタンを押すとカウントダウンが始まります。端末は全員に見える場所に置いてください。</p>` : ''}
+      <button class="btn btn-primary" onclick="insiderDone()">${san(p)}:確認した${isLast ? '(カウントダウン開始)' : ''}</button>
+    </div>`;
+  }
+  // pass
+  const next = s.players[s.idx + 1];
+  return passScreen('<div class="eyebrow">受け渡し</div>', p, next, 'insiderAdvance()');
+}
+function insiderReveal(){ insiderState.subPhase = 'reveal'; render(); }
+function insiderDone(){
+  const s = insiderState;
+  if(s.idx === s.players.length - 1){
+    insiderPrepareAudio();   // ボタン操作の中で音声を有効化(タイムアップ音用)
+    startInsiderCountdown(s.minutes * 60000);
+  } else {
+    s.subPhase = 'pass';
+    render();
+  }
+}
+function insiderAdvance(){
+  const s = insiderState;
+  s.idx += 1;
+  s.subPhase = 'call';
+  render();
+}
+
+/* ---- countdown ---- */
+function fmtTime(ms){
+  const t = Math.max(0, Math.ceil(ms/1000));
+  const m = Math.floor(t/60), sec = t % 60;
+  return String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+}
+function startInsiderCountdown(ms){
+  const s = insiderState;
+  s.segmentMs = ms;
+  s.endAt = Date.now() + ms;
+  s.phase = 'countdown';
+  if(insiderTimer) clearInterval(insiderTimer);
+  insiderTimer = setInterval(tickInsider, 200);
+  render();
+}
+function tickInsider(){
+  const s = insiderState;
+  if(!(appMode === 'insider' && s.phase === 'countdown')){ clearInterval(insiderTimer); insiderTimer = null; return; }
+  const remain = s.endAt - Date.now();
+  const el = document.getElementById('insTimer');
+  const bar = document.getElementById('insBar');
+  if(el) el.textContent = fmtTime(remain);
+  if(bar) bar.style.width = Math.max(0, Math.min(100, remain / s.segmentMs * 100)) + '%';
+  if(remain <= 0){
+    clearInterval(insiderTimer); insiderTimer = null;
+    s.phase = 'timeup';
+    insiderBeep();
+    render();
+  }
+}
+function screenInsiderCountdown(){
+  const s = insiderState;
+  const remain = s.endAt - Date.now();
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">カウントダウン${s.extensions>0 ? '(延長'+s.extensions+'回目)' : ''}</div>
+    <div id="insTimer" style="font-family:var(--font-display); font-size:76px; letter-spacing:0.04em; margin:6px 0 14px;">${fmtTime(remain)}</div>
+    <div class="barrow" style="margin:0 6px 20px;"><div class="bartrack"><div id="insBar" class="barfill" style="width:${Math.max(0, Math.min(100, remain / s.segmentMs * 100))}%;"></div></div></div>
+    <div class="msg">市民はマスターに質問して、お題を当ててください。<br>マスターは「はい」「いいえ」「わからない」だけで答えます。</div>
+    <button class="btn btn-primary" onclick="insiderSolved()">正解が出た(お題の答えを表示)</button>
+  </div>`;
+}
+function insiderSolved(){
+  if(insiderTimer){ clearInterval(insiderTimer); insiderTimer = null; }
+  insiderState.phase = 'answer';
+  render();
+}
+function screenInsiderTimeup(){
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">タイムアップ</div>
+    <div class="who">時間切れです</div>
+    <div class="msg">延長してもう少し続けるか、お題の答えを表示するかを選んでください。${insiderState.extensions>0 ? '<br>(これまでの延長:'+insiderState.extensions+'回)' : ''}</div>
+    <button class="btn btn-primary" onclick="insiderExtend()">延長する(+${Math.round(INSIDER_EXTEND_MS/60000*10)/10}分)</button>
+    <button class="btn btn-danger" onclick="insiderShowAnswer()">お題の答えを表示</button>
+  </div>`;
+}
+function insiderExtend(){
+  insiderPrepareAudio();
+  insiderState.extensions += 1;
+  startInsiderCountdown(INSIDER_EXTEND_MS);
+}
+function insiderShowAnswer(){ insiderState.phase = 'answer'; render(); }
+
+/* ---- answer ---- */
+function screenInsiderAnswer(){
+  const s = insiderState;
+  const master = s.players.find(p=>p.role==='master');
+  const insider = s.players.find(p=>p.role==='insider');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow center" style="text-align:center;">お題の答え(${escapeHtml(s.wordGenreLabel)})</div>
+    <div class="card3d"><div class="cardface pop-in">
+      <div class="roleicon">💡</div>
+      <div class="rolename" style="font-size:34px;">${escapeHtml(s.word)}</div>
+    </div></div>
+    ${s.revealRoles ? `
+      <h3>役職の公開</h3>
+      <div class="resultlist">
+        <div class="resultrow"><span class="rname">${san(master)}</span><span class="badge">${INSIDER_ROLES.master.emoji} マスター</span></div>
+        <div class="resultrow"><span class="rname">${san(insider)}</span><span class="badge wolf">${INSIDER_ROLES.insider.emoji} インサイダー</span></div>
+      </div>
+    ` : `<button class="btn btn-sub" onclick="insiderRevealRoles()">マスターとインサイダーを公開する</button>`}
+    <button class="btn btn-primary" onclick="startInsider()">もう一度遊ぶ(同じ設定)</button>
+    <button class="btn btn-sub" onclick="insiderBackToSetup()">設定に戻る</button>
+  </div>`;
+}
+function insiderRevealRoles(){ insiderState.revealRoles = true; render(); }
+function insiderBackToSetup(){ insiderState.phase = 'setup'; render(); }
+
+/* ---- sound ---- */
+function insiderPrepareAudio(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return;
+    if(!insiderAudioCtx) insiderAudioCtx = new AC();
+    if(insiderAudioCtx.state === 'suspended') insiderAudioCtx.resume();
+  }catch(e){}
+}
+function insiderBeep(){
+  try{
+    if(insiderAudioCtx){
+      for(let i=0;i<3;i++){
+        const o = insiderAudioCtx.createOscillator();
+        const g = insiderAudioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = 880; g.gain.value = 0.25;
+        o.connect(g); g.connect(insiderAudioCtx.destination);
+        const t = insiderAudioCtx.currentTime + i*0.4;
+        o.start(t); o.stop(t + 0.2);
+      }
+    }
+  }catch(e){}
+  try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
+}
+
 
 render();
 </script>
