@@ -140,6 +140,7 @@ input[type=text]:focus{outline:1px solid var(--mist);}
 .badge.hunter{color:var(--silver); border-color:var(--line); background:rgba(205,214,229,0.06);}
 .badge.president{color:var(--emerald); border-color:rgba(111,207,151,0.45); background:rgba(111,207,151,0.09);}
 .badge.madman{color:#c9a8ff; border-color:rgba(169,139,217,0.5); background:rgba(169,139,217,0.1);}
+.badge.paparazzi{color:#ffb3a4; border-color:rgba(214,68,48,0.5); background:rgba(214,68,48,0.1);}
 .lockedgrid{opacity:.45; pointer-events:none;}
 .lockhint{color:var(--amber);}
 
@@ -190,25 +191,28 @@ const ROLES = {
   seer:     {name:'占い師', emoji:'🔮', cls:'seer',     desc:'夜ごとに一人を選び、その者が人狼かどうかを見抜くことができる。'},
   hunter:   {name:'狩人',   emoji:'🛡️', cls:'hunter',   desc:'夜ごとに一人を選び、人狼の凶刃から守ることができる。'},
   president:{name:'社長',   emoji:'🎩', cls:'president',desc:'みんなで話し合い助け合おう。物忘れは激しく、言うことはコロコロと変わる。追放は私が決める。'},
-  madman:   {name:'狂人',   emoji:'🃏', cls:'madman',   desc:'あなたは人狼陣営だが、人狼が誰かは知らない。人狼もあなたが誰かを知らない。特別な能力はないが、人狼陣営の勝利のために村を惑わせ。'}
+  madman:   {name:'狂人',   emoji:'🃏', cls:'madman',   desc:'あなたは人狼陣営だが、人狼が誰かは知らない。人狼もあなたが誰かを知らない。特別な能力はないが、人狼陣営の勝利のために村を惑わせ。'},
+  paparazzi:{name:'パパラッチ', emoji:'📸', cls:'paparazzi', desc:'占い師のように夜ごとに誰かの正体を調べられるが、あなたは人狼陣営に属している。人狼が誰かは知らず、人狼もあなたが誰かを知らない。占いでは人狼だと見抜かれない。'}
 };
 
 function calcWolfCount(n){ return Math.max(1, Math.floor(n/4)); }
 // 各役職の合計が人数を超えないように、村人が最低0人になる範囲でクランプする
-function clampRoleCounts(n, wolf, seer, hunter, president, madman){
+function clampRoleCounts(n, wolf, seer, hunter, president, madman, paparazzi){
   wolf = Math.max(1, wolf);
   seer = Math.max(0, seer);
   hunter = Math.max(0, hunter);
   president = Math.min(1, Math.max(0, president));
   madman = Math.max(0, madman);
-  let total = wolf + seer + hunter + president + madman;
+  paparazzi = Math.max(0, paparazzi);
+  let total = wolf + seer + hunter + president + madman + paparazzi;
   // 超過分は 狂人→狩人→占い師→社長→人狼(1人は残す) の順に削る
+  while(total > n && paparazzi > 0){ paparazzi--; total--; }
   while(total > n && madman > 0){ madman--; total--; }
   while(total > n && hunter > 0){ hunter--; total--; }
   while(total > n && seer > 0){ seer--; total--; }
   while(total > n && president > 0){ president--; total--; }
   while(total > n && wolf > 1){ wolf--; total--; }
-  return {wolf, seer, hunter, president, madman};
+  return {wolf, seer, hunter, president, madman, paparazzi};
 }
 
 /* ---------- state ---------- */
@@ -224,6 +228,7 @@ function freshSetup(){
     hunterCount: 1,
     presidentCount: 0,
     madmanCount: 0,
+    paparazziCount: 0,
     revealOnExecution: false,  // 追放されたプレイヤーの役職をその場で公開するか
     revealOnAttack: false,     // 襲撃されたプレイヤーの役職をその場で公開するか
     pendingQueue: null,        // 次の夜の行動順(ランダム)
@@ -231,7 +236,7 @@ function freshSetup(){
     players: [],
     confirmIdx:0,
     confirmPhase:'call',
-    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null, lockUntil:0 },
+    night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null, paparazziTarget:null, lockUntil:0 },
     lastHunterProtect:null,
     lastVictim:null,
     voteIdx:0,
@@ -261,7 +266,7 @@ function renderLogPanel(){
 }
 
 function alivePlayers(){ return state.players.filter(p=>p.alive); }
-function aliveWolfSide(){ return alivePlayers().filter(p=>p.role==='wolf'); }
+function aliveWolfSide(){ return alivePlayers().filter(p=>p.role==='wolf' || p.role==='paparazzi'); }
 function playerById(id){ return state.players.find(p=>p.id===id); }
 
 /* ---------- render dispatch ---------- */
@@ -272,6 +277,7 @@ function render(){
   else if(appMode === 'lottery'){ html = renderLotteryScreen(); }
   else if(appMode === 'talk_theme'){ html = renderTalkThemeScreen(); }
   else if(appMode === 'insider'){ html = renderInsiderScreen(); }
+  else if(appMode === 'wordwolf'){ html = renderWwScreen(); }
   else if(appMode === 'survey_choice'){ html = renderSurveyChoiceScreen(); }
   else if(appMode === 'survey_free'){ html = renderSurveyFreeScreen(); }
   else { html = renderJinroScreen() + renderLogPanel(); }
@@ -302,6 +308,7 @@ function screenTop(){
     <button class="btn btn-primary menubtn" onclick="enterJinro()">🐺 人狼<span class="sub">正体を隠して村を守れ・話し合いと投票のゲーム</span></button>
     <button class="btn btn-primary menubtn" onclick="enterLottery()">🎯 抽選<span class="sub">入力した候補からランダムに選ぶ・チーム分けも可能</span></button>
     <button class="btn btn-primary menubtn" onclick="enterInsider()">🕵️ インサイダーゲーム<span class="sub">お題を当てながら、お題を知る裏切り者を探す</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterWw()">🎭 ワードウルフ<span class="sub">少し違うお題を持つウルフを会話で探す</span></button>
     <button class="btn btn-primary menubtn" onclick="enterTalkTheme()">💬 トークテーマ<span class="sub">会話のきっかけになるお題をランダムに引く</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyChoice()">🗳️ アンケート(選択式)<span class="sub">選択肢から選んでもらい、匿名で集計</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyFree()">✏️ アンケート(自由入力)<span class="sub">自由記述で回答してもらい、匿名で一覧表示</span></button>
@@ -465,7 +472,13 @@ function screenSetup(){
       <div class="val">${state.madmanCount}</div>
       <button onclick="changeRole('madman',1)">+</button>
     </div>
-    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount - state.madmanCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 狂人 ${state.madmanCount}人 ・ 人狼 ${state.wolfCount}人</p>
+    <label>パパラッチの人数(人狼陣営の占い師)</label>
+    <div class="stepper">
+      <button onclick="changeRole('paparazzi',-1)">−</button>
+      <div class="val">${state.paparazziCount}</div>
+      <button onclick="changeRole('paparazzi',1)">+</button>
+    </div>
+    <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount - state.madmanCount - state.paparazziCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 狂人 ${state.madmanCount}人 ・ パパラッチ ${state.paparazziCount}人 ・ 人狼 ${state.wolfCount}人</p>
 
     <label>追放されたプレイヤーの役職</label>
     <div class="row" style="gap:8px; margin-bottom:14px;">
@@ -496,8 +509,8 @@ function changeN(d){
   } else {
     state.names = state.names.slice(0,n);
   }
-  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount, state.madmanCount);
-  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president; state.madmanCount = c.madman;
+  const c = clampRoleCounts(n, state.wolfCount, state.seerCount, state.hunterCount, state.presidentCount, state.madmanCount, state.paparazziCount);
+  state.wolfCount = c.wolf; state.seerCount = c.seer; state.hunterCount = c.hunter; state.presidentCount = c.president; state.madmanCount = c.madman; state.paparazziCount = c.paparazzi;
   render();
 }
 function changeRole(role, d){
@@ -506,10 +519,11 @@ function changeRole(role, d){
   const h = state.hunterCount + (role==='hunter'?d:0);
   const pr = state.presidentCount + (role==='president'?d:0);
   const md = state.madmanCount + (role==='madman'?d:0);
-  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1 || md < 0) return;
-  if(w + s + h + pr + md > state.n) return;
+  const pp = state.paparazziCount + (role==='paparazzi'?d:0);
+  if(w < 1 || s < 0 || h < 0 || pr < 0 || pr > 1 || md < 0 || pp < 0) return;
+  if(w + s + h + pr + md + pp > state.n) return;
   state.setupError = null;
-  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr; state.madmanCount = md;
+  state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr; state.madmanCount = md; state.paparazziCount = pp;
   render();
 }
 function setReveal(kind, on){
@@ -520,7 +534,7 @@ function setReveal(kind, on){
 function setName(i,v){ state.names[i] = v; }
 
 function startGame(){
-  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount, md = state.madmanCount;
+  const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount, md = state.madmanCount, pp = state.paparazziCount;
   const names = state.names.map((nm,i)=> nm.trim() || ('プレイヤー'+(i+1)));
 
   // 名前に「山口」を含む参加者には人狼の役を与えない
@@ -538,6 +552,7 @@ function startGame(){
   for(let i=0;i<h;i++) others.push('hunter');
   for(let i=0;i<pr;i++) others.push('president');
   for(let i=0;i<md;i++) others.push('madman');
+  for(let i=0;i<pp;i++) others.push('paparazzi');
   while(others.length < n - w) others.push('villager');
   shuffle(others);
 
@@ -571,7 +586,7 @@ function callScreen(eyebrow, p, onclickJs, buttonText){
     ${eyebrow}
     <div class="who">${san(p)}の番です</div>
     <div class="msg">${san(p)}:端末を受け取ったら、周りの人に画面が見えないようにしてから、${san(p)}自身がボタンを押してください。</div>
-    <button class="btn btn-primary" onclick="${onclickJs}">${san(p)}です。${buttonText}</button>
+    <button class="btn btn-primary" onclick="${onclickJs}">${buttonText}</button>
   </div>`;
 }
 function passScreen(eyebrow, from, to, onclickJs){
@@ -581,7 +596,7 @@ function passScreen(eyebrow, from, to, onclickJs){
     ${eyebrow}
     <div class="who">${san(from)}から${san(to)}へ</div>
     <div class="msg">${san(from)}:下のボタンを押してから、端末を${san(to)}に渡してください。</div>
-    <button class="btn btn-primary" onclick="${onclickJs}">${san(from)}:押して、${san(to)}に渡す</button>
+    <button class="btn btn-primary" onclick="${onclickJs}">押して、次の人に渡す</button>
   </div>`;
 }
 function screenConfirm(){
@@ -633,6 +648,7 @@ function beginNight(){
   state.night.phase = 'call';
   state.night.wolfTarget = null;
   state.night.seerTarget = null;
+  state.night.paparazziTarget = null;
   state.night.seerResult = null;
   state.night.hunterTarget = null;
   state.night.villagerDummy = null;
@@ -723,13 +739,13 @@ function screenNight(){
         <button class="btn btn-danger" ${actBtnAttrs('wolfTarget')} onclick="nightConfirmAct()">この人を襲う</button>
       </div>`;
     }
-    if(role === 'seer'){
-      const field = 'seerTarget';
+    if(role === 'seer' || role === 'paparazzi'){
+      const field = role==='paparazzi' ? 'paparazziTarget' : 'seerTarget';
       const targets = state.players.filter(q=>q.id!==p.id);
       const rows = targets.map(q=>targetRow(q, state.night[field], `pick('${field}', ${q.id})`, null)).join('');
       return `
       <div class="panel">
-        <div class="eyebrow">占い師の力</div>
+        <div class="eyebrow">${role==='paparazzi' ? 'パパラッチの目' : '占い師の力'}</div>
         <h3>誰を調べますか?</h3>
         ${actHint()}
         <div ${actGridAttrs()}>${rows}</div>
@@ -752,8 +768,8 @@ function screenNight(){
   }
 
   if(phase === 'result'){
-    if(role === 'seer'){
-      const field = 'seerTarget';
+    if(role === 'seer' || role === 'paparazzi'){
+      const field = role==='paparazzi' ? 'paparazziTarget' : 'seerTarget';
       const t = playerById(state.night[field]);
       const isWolf = t.role === 'wolf';
       return `
@@ -791,7 +807,7 @@ function screenNight(){
     <div class="eyebrow">全員の行動が終わりました</div>
     <div class="who">${san(p)}、夜が明けます</div>
     <div class="msg">${san(p)}:下のボタンを押してから、端末を全員に見える場所に置いてください。</div>
-    <button class="btn btn-primary" onclick="nightAdvance()">${san(p)}:押して朝を迎える</button>
+    <button class="btn btn-primary" onclick="nightAdvance()">押して朝を迎える</button>
   </div>`;
 }
 function pick(field, id){ if(actLocked()) return; state.night[field] = id; render(); }
@@ -881,8 +897,9 @@ function afterMorning(){
 }
 
 /* ---------- 勝敗判定 ----------
-   人数の数え方: 人狼 = 役職が人狼の生存者 / 村人陣営 = それ以外の生存者(狂人は人数の上では村人側に数える)
-   ※ 狂人は人狼陣営として勝敗を共にする(人狼陣営が勝てば狂人も勝ち)
+   村人陣営の勝利: 「人狼」が全滅したとき(パパラッチ・狂人が生存していても。襲撃できる人狼がいないため)
+   人数の数え方: 人狼側 = 人狼 + パパラッチ / 村人陣営 = それ以外の生存者(狂人は人数の上では村人側に数える)
+   ※ 狂人・パパラッチは人狼陣営として勝敗を共にする(人狼陣営が勝てば勝ち)
    ・人狼が全滅 → 村人陣営の勝利
    ・襲撃の結果: 村人陣営の人数が人狼と同数以下 → 人狼陣営の勝利
    ・追放の結果: 村人陣営の人数が人狼より少ない → 人狼陣営の勝利
@@ -890,17 +907,18 @@ function afterMorning(){
                  (狩人が生存している場合は、護衛で襲撃を防げる可能性があるため続行) */
 function countSides(){
   const wolfSide = aliveWolfSide().length;
-  return { wolfSide, villageSide: alivePlayers().length - wolfSide };
+  const wolves = alivePlayers().filter(p=>p.role==='wolf').length;   // 襲撃できる「人狼」そのものの人数
+  return { wolves, wolfSide, villageSide: alivePlayers().length - wolfSide };
 }
 function checkWinAfterAttack(){
-  const {wolfSide, villageSide} = countSides();
-  if(wolfSide === 0) return {winner:'villagers', reason:'wolves_eliminated'};
+  const {wolves, wolfSide, villageSide} = countSides();
+  if(wolves === 0) return {winner:'villagers', reason:'wolves_eliminated'};
   if(villageSide <= wolfSide) return {winner:'wolves', reason:'attack_parity'};
   return null;
 }
 function checkWinAfterExecution(){
-  const {wolfSide, villageSide} = countSides();
-  if(wolfSide === 0) return {winner:'villagers', reason:'wolves_eliminated'};
+  const {wolves, wolfSide, villageSide} = countSides();
+  if(wolves === 0) return {winner:'villagers', reason:'wolves_eliminated'};
   if(villageSide < wolfSide) return {winner:'wolves', reason:'execution_below'};
   const hunterAlive = state.players.some(p=>p.alive && p.role==='hunter');
   if(!hunterAlive){
@@ -1078,7 +1096,8 @@ function screenGameOver(){
     execution_parity: '追放の結果、村人陣営の人数が人狼陣営と同数になり、狩人も不在のため、人狼陣営の勝利となります。',
     execution_lead: '追放の結果、村人陣営が人狼陣営より1人多いだけとなり、狩人も不在のため、次の襲撃で人狼陣営の勝利が確定します。'
   };
-  const madNote = (state.winner==='wolves' && state.players.some(p=>p.role==='madman')) ? ' 狂人も人狼陣営として勝利です。' : '';
+  const teamNames = ['madman','paparazzi'].filter(r=>state.players.some(p=>p.role===r)).map(r=>ROLES[r].name);
+  const madNote = (state.winner==='wolves' && teamNames.length) ? ` ${teamNames.join('・')}も人狼陣営として勝利です。` : '';
   const sub = (subTexts[state.winReason] || '') + madNote;
   const rows = state.players.map(p=>{
     const r = ROLES[p.role];
@@ -1553,7 +1572,7 @@ function freshInsider(){
     phase:'setup', n, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     genre:'all', minutes:5,
     players:[], word:'', wordGenreLabel:'', idx:0, subPhase:'call',
-    endAt:0, segmentMs:0, extensions:0, revealRoles:false
+    endAt:0, segmentMs:0, extensions:0, revealRoles:false, lockUntil:0
   };
 }
 let insiderState = freshInsider();
@@ -1673,15 +1692,42 @@ function screenInsiderConfirm(){
         </div>
       </div>
       ${isLast ? `<p class="hint">このボタンを押すとカウントダウンが始まります。端末は全員に見える場所に置いてください。</p>` : ''}
-      <button class="btn btn-primary" onclick="insiderDone()">${san(p)}:確認した${isLast ? '(カウントダウン開始)' : ''}</button>
+      ${insiderRevealLocked() ? `<p class="hint lockhint" id="insLockHint">あと${Math.ceil((s.lockUntil-Date.now())/1000)}秒でボタンを押せます</p>` : ''}
+      <button class="btn btn-primary" id="insDoneBtn" ${insiderRevealLocked() ? 'disabled style="opacity:.4"' : ''} onclick="insiderDone()">${san(p)}:確認した${isLast ? '(カウントダウン開始)' : ''}</button>
     </div>`;
   }
   // pass
   const next = s.players[s.idx + 1];
   return passScreen('<div class="eyebrow">受け渡し</div>', p, next, 'insiderAdvance()');
 }
-function insiderReveal(){ insiderState.subPhase = 'reveal'; render(); }
+/* 役職確認画面は表示から3秒間ボタンを押せない(お題を読む時間を確保し、すぐ飛ばされるのを防ぐ) */
+const INSIDER_REVEAL_LOCK_MS = 3000;
+let insiderLockTimer = null;
+function insiderRevealLocked(){
+  const s = insiderState;
+  return appMode === 'insider' && s.phase === 'confirm' && s.subPhase === 'reveal' && Date.now() < (s.lockUntil || 0);
+}
+function insiderReveal(){
+  const s = insiderState;
+  s.subPhase = 'reveal';
+  s.lockUntil = Date.now() + INSIDER_REVEAL_LOCK_MS;
+  if(insiderLockTimer) clearInterval(insiderLockTimer);
+  insiderLockTimer = setInterval(tickInsiderLock, 200);
+  render();
+}
+function tickInsiderLock(){
+  const s = insiderState;
+  if(!(appMode === 'insider' && s.phase === 'confirm' && s.subPhase === 'reveal')){ clearInterval(insiderLockTimer); insiderLockTimer = null; return; }
+  const remain = (s.lockUntil || 0) - Date.now();
+  const hint = document.getElementById('insLockHint');
+  if(remain > 0){ if(hint) hint.textContent = `あと${Math.ceil(remain/1000)}秒でボタンを押せます`; return; }
+  clearInterval(insiderLockTimer); insiderLockTimer = null;
+  if(hint) hint.remove();
+  const btn = document.getElementById('insDoneBtn');
+  if(btn){ btn.disabled = false; btn.style.opacity = '1'; }
+}
 function insiderDone(){
+  if(insiderRevealLocked()) return;
   const s = insiderState;
   if(s.idx === s.players.length - 1){
     insiderPrepareAudio();   // ボタン操作の中で音声を有効化(タイムアップ音用)
@@ -1813,6 +1859,269 @@ function insiderBeep(){
   }catch(e){}
   try{ if(navigator.vibrate) navigator.vibrate([200,100,200]); }catch(e){}
 }
+
+
+/* ==================== WORD WOLF ==================== */
+const WW_GENRES = {
+  all:    {label:'おまかせ(全ジャンル)', pairs:[]},
+  food:   {label:'食べ物・飲み物', pairs:[['カレー','シチュー'],['ラーメン','うどん'],['寿司','刺身'],['おにぎり','サンドイッチ'],['ハンバーグ','ミートボール'],['餃子','シュウマイ'],['たこ焼き','お好み焼き'],['天ぷら','フライ'],['プリン','ゼリー'],['ショートケーキ','チーズケーキ'],['コーヒー','紅茶'],['牛乳','豆乳'],['緑茶','ほうじ茶'],['みかん','オレンジ'],['いちご','さくらんぼ'],['りんご','梨'],['ごはん','パン'],['味噌汁','スープ'],['バター','マーガリン'],['醤油','ソース'],['納豆','豆腐'],['唐揚げ','フライドチキン'],['焼肉','ステーキ'],['そば','そうめん'],['アイスクリーム','かき氷'],['ポテトチップス','フライドポテト'],['カステラ','ホットケーキ'],['餅','団子'],['チョコレート','キャラメル'],['ビール','ワイン']]},
+  animal: {label:'動物', pairs:[['ライオン','トラ'],['イヌ','オオカミ'],['ウサギ','ハムスター'],['ペンギン','アザラシ'],['イルカ','クジラ'],['カメ','ワニ'],['ゾウ','サイ'],['キリン','シマウマ'],['サル','ゴリラ'],['チョウ','ガ'],['カラス','ハト'],['フクロウ','タカ'],['ヘビ','トカゲ'],['タヌキ','キツネ'],['パンダ','コアラ'],['カブトムシ','クワガタ'],['スズメ','ツバメ'],['ウマ','ロバ'],['ヒツジ','ヤギ'],['ネズミ','リス']]},
+  place:  {label:'場所', pairs:[['海','川'],['山','丘'],['遊園地','動物園'],['水族館','動物園'],['図書館','本屋'],['学校','塾'],['病院','薬局'],['駅','空港'],['神社','お寺'],['温泉','銭湯'],['公園','広場'],['映画館','劇場'],['スーパー','コンビニ'],['ホテル','旅館'],['デパート','ショッピングモール'],['東京タワー','スカイツリー'],['富士山','エベレスト'],['京都','奈良'],['北海道','沖縄'],['砂漠','ジャングル']]},
+  vehicle:{label:'乗り物', pairs:[['電車','地下鉄'],['新幹線','特急'],['バス','タクシー'],['飛行機','ヘリコプター'],['船','ヨット'],['自転車','バイク'],['救急車','パトカー'],['トラック','ダンプカー'],['ロケット','飛行機'],['ジェットコースター','観覧車'],['ロープウェイ','エレベーター'],['スクーター','キックボード']]},
+  goods:  {label:'身の回りの物', pairs:[['ボールペン','鉛筆'],['消しゴム','修正液'],['ハサミ','カッター'],['傘','レインコート'],['スマートフォン','タブレット'],['テレビ','パソコン'],['冷蔵庫','冷凍庫'],['掃除機','ほうき'],['枕','クッション'],['布団','毛布'],['腕時計','置き時計'],['財布','ポーチ'],['歯ブラシ','歯間ブラシ'],['マスク','ハンカチ'],['鉛筆','シャープペン'],['ノート','手帳'],['シャンプー','ボディソープ'],['リップクリーム','ハンドクリーム'],['眼鏡','コンタクトレンズ'],['スリッパ','サンダル'],['マフラー','ネックウォーマー']]},
+  sports: {label:'スポーツ・趣味', pairs:[['サッカー','フットサル'],['野球','ソフトボール'],['テニス','バドミントン'],['卓球','テニス'],['水泳','ダイビング'],['スキー','スノーボード'],['柔道','空手'],['マラソン','ジョギング'],['ゴルフ','ゲートボール'],['バスケットボール','バレーボール'],['ボウリング','ビリヤード'],['ヨガ','ストレッチ'],['登山','ハイキング'],['釣り','虫取り'],['カラオケ','ライブ'],['ラグビー','アメフト']]},
+  event:  {label:'季節・行事', pairs:[['お正月','大晦日'],['お花見','紅葉狩り'],['ひな祭り','こどもの日'],['夏祭り','花火大会'],['クリスマス','誕生日'],['運動会','遠足'],['七夕','お月見'],['卒業式','入学式'],['海水浴','プール'],['初詣','お墓参り']]},
+  job:    {label:'職業', pairs:[['医者','看護師'],['先生','塾講師'],['警察官','消防士'],['料理人','パン屋'],['美容師','理容師'],['大工','左官'],['歌手','俳優'],['パイロット','運転手'],['弁護士','裁判官'],['漫画家','イラストレーター'],['農家','漁師'],['郵便配達員','宅配員'],['花屋','八百屋'],['画家','彫刻家'],['社長','部長']]}
+};
+let WW_EXTEND_MS = 60000;
+let wwUsedPairs = new Set();
+let wwTimer = null;
+
+function freshWw(){
+  const n = 6;
+  return {
+    phase:'setup', n, wolves:1, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
+    genre:'all', minutes:3,
+    players:[], citizenWord:'', wolfWord:'', genreLabel:'',
+    idx:0, subPhase:'call', endAt:0, segmentMs:0, extensions:0
+  };
+}
+let wwState = freshWw();
+function enterWw(){
+  if(wwTimer){ clearInterval(wwTimer); wwTimer = null; }
+  appMode = 'wordwolf';
+  wwState = freshWw();
+  render();
+}
+function renderWwScreen(){
+  const s = wwState;
+  if(s.phase === 'setup') return screenWwSetup();
+  if(s.phase === 'confirm') return screenWwConfirm();
+  if(s.phase === 'countdown') return screenWwCountdown();
+  if(s.phase === 'timeup') return screenWwTimeup();
+  return screenWwResult();
+}
+function wwMaxWolves(n){ return Math.max(1, Math.floor((n - 1) / 2)); }  // ウルフは市民より少なくする
+
+/* ---- setup ---- */
+function screenWwSetup(){
+  const s = wwState;
+  const genreChips = Object.entries(WW_GENRES).map(([k,g])=>`<span class="chip pick ${s.genre===k?'sel':''}" onclick="setWwGenre('${k}')">${g.label}</span>`).join('');
+  const nameRows = s.names.map((nm,i)=>`
+    <div class="nameitem"><div class="idx">${i+1}</div><input type="text" value="${escapeHtml(nm)}" oninput="setWwName(${i}, this.value)"></div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">ワードウルフ</div>
+    <h1>ゲームの準備</h1>
+    <p class="lead">みんなには同じお題が配られますが、ウルフだけが少し違うお題です。自分がウルフだとは知らないまま会話して、ウルフを探します。</p>
+
+    <label>参加人数(3〜20人)</label>
+    <div class="stepper">
+      <button onclick="changeWwN(-1)">−</button>
+      <div class="val">${s.n}</div>
+      <button onclick="changeWwN(1)">+</button>
+    </div>
+
+    <label>ウルフの人数(1〜${wwMaxWolves(s.n)}人)</label>
+    <div class="stepper">
+      <button onclick="changeWwWolves(-1)">−</button>
+      <div class="val">${s.wolves}</div>
+      <button onclick="changeWwWolves(1)">+</button>
+    </div>
+    <p class="hint">市民 ${s.n - s.wolves}人 ・ ウルフ ${s.wolves}人</p>
+
+    <label>お題のジャンル</label>
+    <div class="chipwrap">${genreChips}</div>
+
+    <label>制限時間(分)</label>
+    <div class="stepper">
+      <button onclick="changeWwMinutes(-1)">−</button>
+      <div class="val">${s.minutes}</div>
+      <button onclick="changeWwMinutes(1)">+</button>
+    </div>
+
+    <label>参加者の名前</label>
+    <div class="namegrid">${nameRows}</div>
+
+    <button class="btn btn-primary" onclick="startWw()">ゲーム開始</button>
+  </div>`;
+}
+function setWwGenre(k){ wwState.genre = k; render(); }
+function setWwName(i,v){ wwState.names[i] = v; }
+function changeWwN(d){
+  const s = wwState;
+  const n = Math.min(20, Math.max(3, s.n + d));
+  if(n === s.n) return;
+  s.n = n;
+  if(n > s.names.length){ while(s.names.length < n) s.names.push('プレイヤー'+(s.names.length+1)); }
+  else s.names = s.names.slice(0, n);
+  s.wolves = Math.min(s.wolves, wwMaxWolves(n));
+  render();
+}
+function changeWwWolves(d){
+  const s = wwState;
+  s.wolves = Math.min(wwMaxWolves(s.n), Math.max(1, s.wolves + d));
+  render();
+}
+function changeWwMinutes(d){
+  const s = wwState;
+  s.minutes = Math.min(30, Math.max(1, s.minutes + d));
+  render();
+}
+function pickWwPair(genreKey){
+  const pool = genreKey === 'all'
+    ? Object.entries(WW_GENRES).filter(([k])=>k!=='all').flatMap(([k,g])=>g.pairs.map(pr=>({pr, label:g.label})))
+    : WW_GENRES[genreKey].pairs.map(pr=>({pr, label:WW_GENRES[genreKey].label}));
+  const key = x => x.pr.join('/');
+  let cands = pool.filter(x=>!wwUsedPairs.has(key(x)));
+  if(cands.length === 0){ pool.forEach(x=>wwUsedPairs.delete(key(x))); cands = pool; }
+  const pick = cands[Math.floor(Math.random()*cands.length)];
+  wwUsedPairs.add(key(pick));
+  // どちらを市民のお題にするかもランダム
+  const swap = Math.random() < 0.5;
+  return { citizen: swap ? pick.pr[1] : pick.pr[0], wolf: swap ? pick.pr[0] : pick.pr[1], label: pick.label };
+}
+function startWw(){
+  const s = wwState;
+  const players = s.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), wolf:false}));
+  const order = players.map((_,i)=>i);
+  shuffle(order);
+  for(let k=0;k<s.wolves;k++) players[order[k]].wolf = true;
+  const pair = pickWwPair(s.genre);
+  s.players = players;
+  s.citizenWord = pair.citizen;
+  s.wolfWord = pair.wolf;
+  s.genreLabel = pair.label;
+  s.idx = 0;
+  s.subPhase = 'call';
+  s.extensions = 0;
+  s.phase = 'confirm';
+  render();
+}
+
+/* ---- お題の確認(1人ずつ端末を回す。自分がウルフかどうかは表示しない) ---- */
+function screenWwConfirm(){
+  const s = wwState;
+  const p = s.players[s.idx];
+  const isLast = s.idx === s.players.length - 1;
+  const eyebrow = `<div class="eyebrow">お題の確認 ${s.idx+1} / ${s.players.length}</div>`;
+  if(s.subPhase === 'call'){
+    return callScreen(eyebrow, p, 'wwReveal()', 'お題を確認する');
+  }
+  if(s.subPhase === 'reveal'){
+    const word = p.wolf ? s.wolfWord : s.citizenWord;
+    return `
+    <div class="panel">
+      <div class="eyebrow">${san(p)}のお題</div>
+      <div class="card3d">
+        <div class="cardface">
+          <div class="small">あなたのお題</div>
+          <div class="rolename" style="font-size:36px; margin:10px 0;">${escapeHtml(word)}</div>
+          <div class="roledesc">他の人のお題と少し違うかもしれません。会話の中で探りましょう。</div>
+        </div>
+      </div>
+      ${isLast ? `<p class="hint">このボタンを押すとカウントダウンが始まります。端末は全員に見える場所に置いてください。</p>` : ''}
+      <button class="btn btn-primary" onclick="wwDone()">${san(p)}:確認した${isLast ? '(カウントダウン開始)' : ''}</button>
+    </div>`;
+  }
+  const next = s.players[s.idx + 1];
+  return passScreen('<div class="eyebrow">受け渡し</div>', p, next, 'wwAdvance()');
+}
+function wwReveal(){ wwState.subPhase = 'reveal'; render(); }
+function wwDone(){
+  const s = wwState;
+  if(s.idx === s.players.length - 1){
+    insiderPrepareAudio();
+    startWwCountdown(s.minutes * 60000);
+  } else {
+    s.subPhase = 'pass';
+    render();
+  }
+}
+function wwAdvance(){
+  const s = wwState;
+  s.idx += 1;
+  s.subPhase = 'call';
+  render();
+}
+
+/* ---- countdown ---- */
+function startWwCountdown(ms){
+  const s = wwState;
+  s.segmentMs = ms;
+  s.endAt = Date.now() + ms;
+  s.phase = 'countdown';
+  if(wwTimer) clearInterval(wwTimer);
+  wwTimer = setInterval(tickWw, 200);
+  render();
+}
+function tickWw(){
+  const s = wwState;
+  if(!(appMode === 'wordwolf' && s.phase === 'countdown')){ clearInterval(wwTimer); wwTimer = null; return; }
+  const remain = s.endAt - Date.now();
+  const el = document.getElementById('wwTimer');
+  const bar = document.getElementById('wwBar');
+  if(el) el.textContent = fmtTime(remain);
+  if(bar) bar.style.width = Math.max(0, Math.min(100, remain / s.segmentMs * 100)) + '%';
+  if(remain <= 0){
+    clearInterval(wwTimer); wwTimer = null;
+    s.phase = 'timeup';
+    insiderBeep();
+    render();
+  }
+}
+function screenWwCountdown(){
+  const s = wwState;
+  const remain = s.endAt - Date.now();
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">カウントダウン${s.extensions>0 ? '(延長'+s.extensions+'回目)' : ''}</div>
+    <div id="wwTimer" style="font-family:var(--font-display); font-size:76px; letter-spacing:0.04em; margin:6px 0 14px;">${fmtTime(remain)}</div>
+    <div class="barrow" style="margin:0 6px 20px;"><div class="bartrack"><div id="wwBar" class="barfill" style="width:${Math.max(0, Math.min(100, remain / s.segmentMs * 100))}%;"></div></div></div>
+    <div class="msg">自分のお題を明かさずに会話して、ウルフを探してください。<br>時間になったら、せーので指をさして投票しましょう。</div>
+  </div>`;
+}
+function screenWwTimeup(){
+  const s = wwState;
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">タイムアップ</div>
+    <div class="who">時間切れです</div>
+    <div class="msg">まだ話し合いを続けるなら延長、投票が済んだらウルフを表示します。${s.extensions>0 ? '<br>(これまでの延長:'+s.extensions+'回)' : ''}</div>
+    <button class="btn btn-primary" onclick="wwExtend()">延長する(+${Math.round(WW_EXTEND_MS/60000*10)/10}分)</button>
+    <button class="btn btn-danger" onclick="wwShowResult()">延長しない(ウルフを表示)</button>
+  </div>`;
+}
+function wwExtend(){
+  insiderPrepareAudio();
+  wwState.extensions += 1;
+  startWwCountdown(WW_EXTEND_MS);
+}
+function wwShowResult(){ wwState.phase = 'result'; render(); }
+
+/* ---- result ---- */
+function screenWwResult(){
+  const s = wwState;
+  const wolves = s.players.filter(p=>p.wolf);
+  const rows = wolves.map(p=>`<div class="resultrow"><span class="rname">${san(p)}</span><span class="badge wolf">🐺 ウルフ</span></div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow center" style="text-align:center;">結果発表(${escapeHtml(s.genreLabel)})</div>
+    <h1 class="center" style="text-align:center;">ウルフは…</h1>
+    <div class="resultlist">${rows}</div>
+    <div class="divider"></div>
+    <div class="resultlist">
+      <div class="resultrow"><span class="small">市民のお題</span><span class="rname">${escapeHtml(s.citizenWord)}</span></div>
+      <div class="resultrow"><span class="small">ウルフのお題</span><span class="rname">${escapeHtml(s.wolfWord)}</span></div>
+    </div>
+    <p class="hint">ウルフが見破られた場合は、ウルフが市民のお題を当てられれば逆転勝利、というルールでも遊べます。</p>
+    <button class="btn btn-primary" onclick="startWw()">もう一度遊ぶ(同じ設定)</button>
+    <button class="btn btn-sub" onclick="wwBackToSetup()">設定に戻る</button>
+  </div>`;
+}
+function wwBackToSetup(){ wwState.phase = 'setup'; render(); }
 
 
 render();
