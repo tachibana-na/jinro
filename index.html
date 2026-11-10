@@ -1883,7 +1883,7 @@ function freshWw(){
     phase:'setup', n, wolves:1, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     genre:'all', minutes:3,
     players:[], citizenWord:'', wolfWord:'', genreLabel:'',
-    idx:0, subPhase:'call', endAt:0, segmentMs:0, extensions:0
+    idx:0, subPhase:'call', endAt:0, segmentMs:0, extensions:0, confirmEnd:false
   };
 }
 let wwState = freshWw();
@@ -2052,6 +2052,7 @@ function startWwCountdown(ms){
   s.segmentMs = ms;
   s.endAt = Date.now() + ms;
   s.phase = 'countdown';
+  s.confirmEnd = false;
   if(wwTimer) clearInterval(wwTimer);
   wwTimer = setInterval(tickWw, 200);
   render();
@@ -2080,8 +2081,17 @@ function screenWwCountdown(){
     <div id="wwTimer" style="font-family:var(--font-display); font-size:76px; letter-spacing:0.04em; margin:6px 0 14px;">${fmtTime(remain)}</div>
     <div class="barrow" style="margin:0 6px 20px;"><div class="bartrack"><div id="wwBar" class="barfill" style="width:${Math.max(0, Math.min(100, remain / s.segmentMs * 100))}%;"></div></div></div>
     <div class="msg">自分のお題を明かさずに会話して、ウルフを探してください。<br>時間になったら、せーので指をさして投票しましょう。</div>
+    ${s.confirmEnd ? `
+      <div class="hint" style="margin-bottom:6px;">時間前に終了して、ウルフを表示します。よろしいですか?</div>
+      <button class="btn btn-danger" onclick="wwShowResult()">ウルフを表示する</button>
+      <button class="btn btn-sub" onclick="wwCancelEnd()">カウントダウンに戻る</button>
+    ` : `
+      <button class="btn btn-sub" onclick="wwAskEnd()">時間前にウルフを表示する</button>
+    `}
   </div>`;
 }
+function wwAskEnd(){ wwState.confirmEnd = true; render(); }
+function wwCancelEnd(){ wwState.confirmEnd = false; render(); }
 function screenWwTimeup(){
   const s = wwState;
   return `
@@ -2098,7 +2108,12 @@ function wwExtend(){
   wwState.extensions += 1;
   startWwCountdown(WW_EXTEND_MS);
 }
-function wwShowResult(){ wwState.phase = 'result'; render(); }
+function wwShowResult(){
+  if(wwTimer){ clearInterval(wwTimer); wwTimer = null; }
+  wwState.confirmEnd = false;
+  wwState.phase = 'result';
+  render();
+}
 
 /* ---- result ---- */
 function screenWwResult(){
