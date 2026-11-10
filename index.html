@@ -537,32 +537,34 @@ function startGame(){
   const n = state.n, w = state.wolfCount, s = state.seerCount, h = state.hunterCount, pr = state.presidentCount, md = state.madmanCount, pp = state.paparazziCount;
   const names = state.names.map((nm,i)=> nm.trim() || ('プレイヤー'+(i+1)));
 
-  // 名前に「山口」を含む参加者には人狼の役を与えない
-  const wolfEligible = names.map((_,i)=>i).filter(i=>!names[i].includes('山口'));
-  if(wolfEligible.length < w){
-    state.setupError = `人狼を割り当てられる参加者が足りません(候補${wolfEligible.length}人/人狼${w}人)。人狼の人数を減らしてください。`;
+  // 名前に「山口」を含む参加者は人狼陣営(人狼・狂人・パパラッチ)にならない
+  const wolfSideRoles = [];
+  for(let i=0;i<w;i++) wolfSideRoles.push('wolf');
+  for(let i=0;i<md;i++) wolfSideRoles.push('madman');
+  for(let i=0;i<pp;i++) wolfSideRoles.push('paparazzi');
+  const eligible = names.map((_,i)=>i).filter(i=>!names[i].includes('山口'));
+  if(eligible.length < wolfSideRoles.length){
+    state.setupError = `人狼陣営の役職を割り当てられる参加者が足りません(候補${eligible.length}人/人狼陣営${wolfSideRoles.length}人)。人狼・狂人・パパラッチの人数を減らしてください。`;
     render();
     return;
   }
   state.setupError = null;
 
-  // 人狼以外の役職を用意(足りない分は村人)
+  // 人狼陣営の役職は、条件を満たす参加者の中からランダムに割り当てる
+  const pool = [...eligible];
+  shuffle(pool);
+  const roles = new Array(n).fill(null);
+  wolfSideRoles.forEach((role, k)=>{ roles[pool[k]] = role; });
+
+  // 残りの役職(占い師・狩人・社長・村人)を、空いている席にランダムに割り当てる
   const others = [];
   for(let i=0;i<s;i++) others.push('seer');
   for(let i=0;i<h;i++) others.push('hunter');
   for(let i=0;i<pr;i++) others.push('president');
-  for(let i=0;i<md;i++) others.push('madman');
-  for(let i=0;i<pp;i++) others.push('paparazzi');
-  while(others.length < n - w) others.push('villager');
+  while(others.length < n - wolfSideRoles.length) others.push('villager');
   shuffle(others);
-
-  // 人狼は「山口」を含まない参加者の中からランダムに選ぶ
-  const wolfPool = [...wolfEligible];
-  shuffle(wolfPool);
-  const wolfSet = new Set(wolfPool.slice(0, w));
-  const roles = [];
-  let k = 0;
-  for(let i=0;i<n;i++) roles.push(wolfSet.has(i) ? 'wolf' : others[k++]);
+  let k2 = 0;
+  for(let i=0;i<n;i++){ if(roles[i] === null) roles[i] = others[k2++]; }
 
   state.players = names.map((nm,i)=>({id:i, name: nm, role: roles[i], alive:true, deathCause:null}));
   state.log = [];
