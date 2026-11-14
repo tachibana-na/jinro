@@ -238,6 +238,7 @@ function freshSetup(){
     confirmPhase:'call',
     night:{ day:1, queue:[], qIdx:0, phase:'call', wolfTarget:null, seerTarget:null, seerResult:null, hunterTarget:null, villagerDummy:null, paparazziTarget:null, lockUntil:0 },
     lastHunterProtect:null,
+    hunterConsecutive:true,    // 狩人が前夜と同じ人を続けて護衛できるか
     lastVictim:null,
     voteIdx:0,
     voteQueueIds:[],
@@ -480,6 +481,13 @@ function screenSetup(){
     </div>
     <p class="hint">村人 ${Math.max(0, state.n - state.wolfCount - state.seerCount - state.hunterCount - state.presidentCount - state.madmanCount - state.paparazziCount)}人 ・ 占い師 ${state.seerCount}人 ・ 狩人 ${state.hunterCount}人 ・ 社長 ${state.presidentCount}人 ・ 狂人 ${state.madmanCount}人 ・ パパラッチ ${state.paparazziCount}人 ・ 人狼 ${state.wolfCount}人</p>
 
+    <label>狩人が続けて同じ人を守ること</label>
+    <div class="row" style="gap:8px; margin-bottom:6px;">
+      <button class="btn ${state.hunterConsecutive?'btn-primary':''}" style="margin:0;" onclick="setHunterConsecutive(true)">できる</button>
+      <button class="btn ${state.hunterConsecutive?'':'btn-primary'}" style="margin:0;" onclick="setHunterConsecutive(false)">できない</button>
+    </div>
+    <p class="hint" style="margin-bottom:14px;">「できない」にすると、前の夜に守った人は、次の夜に選べなくなります。</p>
+
     <label>追放されたプレイヤーの役職</label>
     <div class="row" style="gap:8px; margin-bottom:14px;">
       <button class="btn ${state.revealOnExecution?'':'btn-primary'}" style="margin:0;" onclick="setReveal('execution', false)">公開しない</button>
@@ -526,6 +534,7 @@ function changeRole(role, d){
   state.wolfCount = w; state.seerCount = s; state.hunterCount = h; state.presidentCount = pr; state.madmanCount = md; state.paparazziCount = pp;
   render();
 }
+function setHunterConsecutive(on){ state.hunterConsecutive = on; render(); }
 function setReveal(kind, on){
   if(kind === 'execution') state.revealOnExecution = on;
   else state.revealOnAttack = on;
@@ -761,14 +770,19 @@ function screenNight(){
       </div>`;
     }
     // hunter(自分自身も対象に含む)
+    const lastP = state.lastHunterProtect !== null ? playerById(state.lastHunterProtect) : null;
+    const blockLast = !state.hunterConsecutive && lastP && lastP.alive;   // 連続護衛が禁止で、前回の対象がまだ生きている
     const rows = state.players.map(q=>{
-      const note = state.lastHunterProtect===q.id ? '前回護衛' : null;
-      return targetRow(q, state.night.hunterTarget, `pick('hunterTarget', ${q.id})`, null, note);
+      const isLast = state.lastHunterProtect === q.id;
+      const reason = (!state.hunterConsecutive && isLast) ? '前回護衛(連続不可)' : null;
+      const note = (state.hunterConsecutive && isLast) ? '前回護衛' : null;
+      return targetRow(q, state.night.hunterTarget, `pick('hunterTarget', ${q.id})`, reason, note);
     }).join('');
     return `
     <div class="panel">
       <div class="eyebrow">狩人の力</div>
       <h3>誰を守りますか?</h3>
+      ${blockLast ? `<p class="hint">前の夜に守った${escapeHtml(lastP.name)}さんは、続けて守れません。</p>` : ''}
       ${actHint()}
       <div ${actGridAttrs()}>${rows}</div>
       <button class="btn btn-primary" ${actBtnAttrs('hunterTarget')} onclick="nightConfirmAct()">守る</button>
@@ -818,7 +832,12 @@ function screenNight(){
     <button class="btn btn-primary" onclick="nightAdvance()">押して朝を迎える</button>
   </div>`;
 }
-function pick(field, id){ if(actLocked()) return; state.night[field] = id; render(); }
+function pick(field, id){
+  if(actLocked()) return;
+  if(field === 'hunterTarget' && !state.hunterConsecutive && id === state.lastHunterProtect) return;
+  state.night[field] = id;
+  render();
+}
 // 設定で「公開する」にしている退場理由の場合のみ、役職名を返す(それ以外はnull)
 function revealedRoleOf(q){
   const on = (q.deathCause==='executed' && state.revealOnExecution) || (q.deathCause==='killed' && state.revealOnAttack);
