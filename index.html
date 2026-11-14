@@ -542,7 +542,7 @@ function startGame(){
   for(let i=0;i<w;i++) wolfSideRoles.push('wolf');
   for(let i=0;i<md;i++) wolfSideRoles.push('madman');
   for(let i=0;i<pp;i++) wolfSideRoles.push('paparazzi');
-  const eligible = names.map((_,i)=>i).filter(i=>!names[i].includes('山口'));
+  const eligible = names.map((_,i)=>i).filter(i=>!isYamaguchi(names[i]));
   if(eligible.length < wolfSideRoles.length){
     state.setupError = `人狼陣営の役職を割り当てられる参加者が足りません(候補${eligible.length}人/人狼陣営${wolfSideRoles.length}人)。人狼・狂人・パパラッチの人数を減らしてください。`;
     render();
@@ -656,6 +656,12 @@ function beginNight(){
   state.night.villagerDummy = null;
   state.screen = 'night';
   render();
+}
+// 「山口」「やまぐち」「ヤマグチ」(半角カナ・ローマ字含む)を名前に含むか判定する
+function isYamaguchi(name){
+  const t = String(name).normalize('NFKC').toLowerCase();                       // 半角カナ→全角、全角英字→半角、英字→小文字
+  const hira = t.replace(/[\u30a1-\u30f6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));  // カタカナ→ひらがな
+  return hira.includes('山口') || hira.includes('やまぐち') || hira.includes('yamaguchi');
 }
 function shuffledAliveIds(){
   const q = alivePlayers().map(p=>p.id);
