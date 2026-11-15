@@ -292,6 +292,7 @@ function render(){
   else if(appMode === 'insider'){ html = renderInsiderScreen(); }
   else if(appMode === 'wordwolf'){ html = renderWwScreen(); }
   else if(appMode === 'ito'){ html = renderItoScreen(); }
+  else if(appMode === 'pd'){ html = renderPdScreen(); }
   else if(appMode === 'survey_choice'){ html = renderSurveyChoiceScreen(); }
   else if(appMode === 'survey_free'){ html = renderSurveyFreeScreen(); }
   else { html = renderJinroScreen() + renderLogPanel(); }
@@ -324,6 +325,7 @@ function screenTop(){
     <button class="btn btn-primary menubtn" onclick="enterInsider()">🕵️ インサイダーゲーム<span class="sub">お題を当てながら、お題を知る裏切り者を探す</span></button>
     <button class="btn btn-primary menubtn" onclick="enterWw()">🎭 ワードウルフ<span class="sub">少し違うお題を持つウルフを会話で探す</span></button>
     <button class="btn btn-primary menubtn" onclick="enterIto()">🔢 価値観合わせゲーム<span class="sub">お題に沿って数字の大きい順に並べる(ito風)</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterPd()">🎲 偏見暴露ゲーム<span class="sub">「〜そうな人」を名指し。お題は1/2の確率で公開(パラノイア風)</span></button>
     <button class="btn btn-primary menubtn" onclick="enterTalkTheme()">💬 トークテーマ<span class="sub">会話のきっかけになるお題をランダムに引く</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyChoice()">🗳️ アンケート(選択式)<span class="sub">選択肢から選んでもらい、匿名で集計</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyFree()">✏️ アンケート(自由入力)<span class="sub">自由記述で回答してもらい、匿名で一覧表示</span></button>
@@ -2502,6 +2504,285 @@ function screenItoResult(){
   </div>`;
 }
 function itoBackToSetup(){ itoState.phase = 'setup'; render(); }
+
+
+/* ==================== 偏見暴露ゲーム(パラノイア風) ==================== */
+// 「この中で1番『〜そうな人』は?」のお題。見た目では分からない内面・生活・行動のイメージを中心にしている。
+const PD_NORMAL = [
+  '実はお金に細かそうな人','実は借金を抱えていそうな人','宝くじが当たったら仕事を辞めそうな人','1億円当たっても家族に黙っていそうな人',
+  '実は部屋が散らかっていそうな人','実は風呂に入らない日がありそうな人','実は歯磨きをサボる日がありそうな人','実は夜更かしが習慣になっていそうな人',
+  '実はゲームに課金していそうな人','実はギャンブルにハマっていそうな人','実は推し活にお金をつぎ込んでいそうな人','実は隠し事が多そうな人',
+  '実は秘密の趣味がありそうな人','実は嘘をつくのが上手そうな人','実は陰で悪口を言っていそうな人','実は根に持つタイプそうな人',
+  '実はプライドが高そうな人','実は寂しがり屋そうな人','実は泣き虫そうな人','映画やドラマで号泣していそうな人',
+  '実は占いを信じていそうな人','実はスピリチュアルにハマりそうな人','怪しい勧誘に引っかかりそうな人','詐欺に騙されそうな人',
+  '実はSNSの裏アカウントを持っていそうな人','実は元ヤンキーそうな人','学生時代はモテていそうな人','実は初恋を引きずっていそうな人',
+  '元恋人の連絡先を消せていなさそうな人','実は束縛が強そうな人','実は恋人にお金を貸していそうな人','結婚が早そうな人',
+  '結婚式で号泣しそうな人','実は結婚願望が強そうな人','実は子煩悩になりそうな人','実は子どもが苦手そうな人',
+  '実は実家が太そうな人','実は芸能人の知り合いがいそうな人','実は海外に移住しそうな人','突然会社を辞めそうな人',
+  '実は起業しそうな人','出世しそうな人','実は転職を繰り返していそうな人','仕事中にこっそりサボっていそうな人',
+  '実は上司の悪口を言っていそうな人','実は隠れオタクそうな人','実はアイドルの追っかけをしていそうな人','実はナルシストそうな人',
+  '自分の写真を撮りまくっていそうな人','お酒を飲むと豹変しそうな人','二日酔いで仕事を休んだことがありそうな人','終電を逃しがちな人',
+  '遅刻の常習犯そうな人','約束をうっかり忘れそうな人','貸したものを返さなそうな人','割り勘で細かく計算しそうな人',
+  '実はケチそうな人','奢られ慣れていそうな人','一人旅をしていそうな人','一人焼肉に通っていそうな人',
+  'カラオケで熱唱しそうな人','一人カラオケによく行っていそうな人','ペットに話しかけすぎていそうな人','独り言が多そうな人',
+  '寝言が多そうな人','いびきが大きそうな人','寝相が悪そうな人','朝がとても弱そうな人',
+  '実は潔癖症そうな人','虫が大の苦手そうな人','お化けが怖くて夜眠れなくなりそうな人','注射が苦手そうな人',
+  '高所恐怖症そうな人','運転が荒そうな人','方向音痴そうな人','スマホの画面が割れていそうな人',
+  'アプリの通知が数千件たまっていそうな人','既読無視をしそうな人','返信が遅そうな人','電話に出なさそうな人',
+  'グループLINEをこっそり抜けそうな人','人の誕生日を覚えていなさそうな人','記念日を忘れそうな人','サプライズが好きそうな人',
+  '裏で努力していそうな人','コンプレックスを隠していそうな人','変わった特技を持っていそうな人','変な資格を持っていそうな人',
+  '黒歴史を持っていそうな人','中二病だった過去がありそうな人','昔バンドをやっていそうな人','賞味期限切れでも食べそうな人',
+  '食べ物の好き嫌いが多そうな人','実はものすごく食べそうな人','実は甘党そうな人','禁煙に何度も失敗していそうな人',
+  '実は動物に好かれそうな人','サウナにハマっていそうな人','実は料理が壊滅的そうな人','実は料理の腕を隠していそうな人',
+  '実は貯金が多そうな人','実は投資で損をしていそうな人','実は副業をしていそうな人','実は転生ものの小説を読んでいそうな人',
+  '実はドラマの結末を先に調べそうな人','実は嫉妬深そうな人','実は負けず嫌いそうな人','実は人見知りそうな人',
+  '実はクレーマーになりそうな人','実は親友に秘密を話していそうな人','実は自分に甘そうな人','実は人に言えない失敗談がありそうな人'
+];
+const PD_ADULT = [
+  '性欲が強そうな人','エッチが上手そうな人','ベッドの上でSっ気がありそうな人','ベッドの上でMっ気がありそうな人',
+  '変態そうな人','むっつりスケベそうな人','隠さずスケベそうな人','経験人数が多そうな人',
+  '経験が少なそうな人','遊んでいそうな人','浮気しそうな人','不倫しそうな人',
+  '風俗に通っていそうな人','アダルトビデオをよく見ていそうな人','エロ本やエロ動画を隠し持っていそうな人','スマホにエッチな画像が入っていそうな人',
+  'オナニーの回数が多そうな人','ラブホテルに詳しそうな人','ワンナイトの経験が多そうな人','セフレがいそうな人',
+  'キスが上手そうな人','キスが下手そうな人','エッチのとき声が大きそうな人','エッチのとき無口そうな人',
+  '前戯が長そうな人','エッチが淡白そうな人','エッチがしつこそうな人','コスプレプレイが好きそうな人',
+  '縛られるのが好きそうな人','縛るのが好きそうな人','野外プレイに興味がありそうな人','3Pに興味がありそうな人',
+  '大人のおもちゃを持っていそうな人','勝負下着をたくさん持っていそうな人','酔うと脱ぎそうな人','酔うとキス魔になりそうな人',
+  '酔うと口説きだしそうな人','ナンパが得意そうな人','ナンパされやすそうな人','お持ち帰りされそうな人',
+  'お持ち帰りしそうな人','夜の営みが激しそうな人','愛人がいそうな人','愛人になりそうな人',
+  '出会い系アプリで遊んでいそうな人','夜のお店で働いたことがありそうな人','キャバクラにハマりそうな人','ホストにハマりそうな人',
+  'エッチな夢を見ていそうな人','下ネタをよく言っていそうな人','下ネタに弱そうな人','ハプニングバーに行っていそうな人',
+  '頭の中がエッチなことでいっぱいそうな人','誘われたら断れなさそうな人','友達と一線を越えそうな人','元恋人とよりを戻して夜を過ごしそうな人',
+  '寝取られに興奮しそうな人','寝取りそうな人','エッチなことで人に言えない秘密がありそうな人','エッチの最中に変なクセがありそうな人',
+  '初デートで関係を持ちそうな人','結婚しても遊びそうな人','ハニートラップに引っかかりそうな人','夜の仕事に向いていそうな人'
+];
+const PD_CONTENT = {
+  normal: {label:'通常のみ(下ネタなし)'},
+  mixed:  {label:'通常+下ネタ'},
+  adult:  {label:'下ネタのみ'}
+};
+const PD_TURN_OPTIONS = [5,10,20,30,50,0];   // 0 = エンドレス
+let pdUsedPrompts = new Set();
+
+function freshPd(){
+  const n = 6;
+  return {
+    phase:'setup', n, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
+    order:'seq', content:'normal', turns:10,
+    players:[], turn:0, curIdx:0, sub:'call', prompt:'', revealed:false,
+    bag:[], lastIdx:null, history:[]
+  };
+}
+let pdState = freshPd();
+function enterPd(){ appMode = 'pd'; pdState = freshPd(); render(); }
+function renderPdScreen(){
+  const s = pdState;
+  if(s.phase === 'setup') return screenPdSetup();
+  if(s.phase === 'play') return screenPdPlay();
+  return screenPdEnd();
+}
+
+/* ---- setup ---- */
+function screenPdSetup(){
+  const s = pdState;
+  const orderChips = [['seq','順番'],['random','ランダム']].map(([k,l])=>`<span class="chip pick ${s.order===k?'sel':''}" onclick="setPdOrder('${k}')">${l}</span>`).join('');
+  const contentChips = Object.entries(PD_CONTENT).map(([k,c])=>`<span class="chip pick ${s.content===k?'sel':''}" onclick="setPdContent('${k}')">${c.label}</span>`).join('');
+  const turnChips = PD_TURN_OPTIONS.map(t=>`<span class="chip pick ${s.turns===t?'sel':''}" onclick="setPdTurns(${t})">${t===0?'エンドレス':t+'個'}</span>`).join('');
+  const nameRows = s.names.map((nm,i)=>`
+    <div class="nameitem"><div class="idx">${i+1}</div><input type="text" value="${escapeHtml(nm)}" oninput="setPdName(${i}, this.value)"></div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">偏見暴露ゲーム</div>
+    <h1>ゲームの準備</h1>
+    <p class="lead">手番の人だけがお題「この中で1番〇〇そうな人」を見て、思い浮かんだ人の名前を声に出して言います。お題は1/2の確率で全員に公開され、残りの1/2は闇に葬り去られます。</p>
+
+    <label>参加人数(3〜20人)</label>
+    <div class="stepper">
+      <button onclick="changePdN(-1)">−</button>
+      <div class="val">${s.n}</div>
+      <button onclick="changePdN(1)">+</button>
+    </div>
+
+    <label>手番</label>
+    <div class="chipwrap">${orderChips}</div>
+    <p class="hint">${s.order==='seq' ? '名前の並び順に回します。' : '毎回ランダムに決まります(全員が1巡するまで同じ人は出ません)。'}</p>
+
+    <label>お題の内容</label>
+    <div class="chipwrap">${contentChips}</div>
+    ${s.content!=='normal' ? `<p class="errtext" style="margin-top:0;">※ 直接的な性的表現を含みます。参加者全員の同意のうえで選んでください。</p>` : ''}
+
+    <label>お題を出す数(ターン数)</label>
+    <div class="chipwrap">${turnChips}</div>
+
+    <label>参加者の名前</label>
+    <div class="namegrid">${nameRows}</div>
+
+    <button class="btn btn-primary" onclick="startPd()">ゲーム開始</button>
+  </div>`;
+}
+function setPdOrder(k){ pdState.order = k; render(); }
+function setPdContent(k){ pdState.content = k; render(); }
+function setPdTurns(t){ pdState.turns = t; render(); }
+function setPdName(i,v){ pdState.names[i] = v; }
+function changePdN(d){
+  const s = pdState;
+  const n = Math.min(20, Math.max(3, s.n + d));
+  if(n === s.n) return;
+  s.n = n;
+  if(n > s.names.length){ while(s.names.length < n) s.names.push('プレイヤー'+(s.names.length+1)); }
+  else s.names = s.names.slice(0, n);
+  render();
+}
+function pdPool(content){
+  return content === 'normal' ? PD_NORMAL : content === 'adult' ? PD_ADULT : [...PD_NORMAL, ...PD_ADULT];
+}
+function drawPdPrompt(){
+  const s = pdState;
+  const pool = pdPool(s.content);
+  let cands = pool.filter(x=>!pdUsedPrompts.has(x));
+  if(cands.length === 0){ pool.forEach(x=>pdUsedPrompts.delete(x)); cands = pool; }
+  const pick = cands[Math.floor(Math.random()*cands.length)];
+  pdUsedPrompts.add(pick);
+  return pick;
+}
+function nextPdPlayerIdx(turnNumber){
+  const s = pdState;
+  if(s.order === 'seq') return (turnNumber - 1) % s.players.length;
+  // ランダム: 全員が1巡するまで同じ人は出ない。巡の切れ目で同じ人が続かないようにする
+  if(s.bag.length === 0){
+    s.bag = s.players.map((_,i)=>i);
+    shuffle(s.bag);
+    if(s.players.length > 1 && s.bag[0] === s.lastIdx){
+      const j = 1 + Math.floor(Math.random()*(s.bag.length-1));
+      [s.bag[0], s.bag[j]] = [s.bag[j], s.bag[0]];
+    }
+  }
+  const idx = s.bag.shift();
+  s.lastIdx = idx;
+  return idx;
+}
+function startPd(){
+  const s = pdState;
+  s.players = s.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1))}));
+  s.turn = 0; s.bag = []; s.lastIdx = null; s.nextIdx = null; s.history = [];
+  s.phase = 'play';
+  beginPdTurn();
+}
+function beginPdTurn(){
+  const s = pdState;
+  s.turn += 1;
+  // 直前の結果画面で次の人を決めている場合はその人、最初のターンはここで決める
+  s.curIdx = (s.nextIdx !== null && s.nextIdx !== undefined) ? s.nextIdx : nextPdPlayerIdx(s.turn);
+  s.nextIdx = null;
+  s.prompt = drawPdPrompt();
+  s.revealed = false;
+  s.sub = 'call';
+  render();
+}
+
+/* ---- play ---- */
+function pdTurnLabel(){
+  const s = pdState;
+  return s.turns === 0 ? `第${s.turn}ターン(エンドレス)` : `第${s.turn}ターン / ${s.turns}`;
+}
+function screenPdPlay(){
+  const s = pdState;
+  const p = s.players[s.curIdx];
+  if(s.sub === 'call'){
+    return `
+    <div class="panel callwrap">
+      <div class="eyebrow">${pdTurnLabel()}</div>
+      <div class="who">${san(p)}の番です</div>
+      <div class="msg">${san(p)}:端末を受け取ったら、周りの人に画面が見えないようにしてから、${san(p)}自身がボタンを押してください。</div>
+      <button class="btn btn-primary" onclick="pdShowPrompt()">お題を表示する</button>
+    </div>`;
+  }
+  if(s.sub === 'prompt'){
+    return `
+    <div class="panel">
+      <div class="eyebrow">${san(p)}のお題</div>
+      <div class="card3d">
+        <div class="cardface">
+          <div class="small">この中で1番…</div>
+          <div class="rolename" style="font-size:26px; line-height:1.5; margin:10px 0;">「${escapeHtml(s.prompt)}」</div>
+          <div class="small">は?</div>
+        </div>
+      </div>
+      <p class="hint">思い浮かんだ人の名前を、みんなに聞こえるように声に出して言ってください。(画面で選んだり入力したりはしません)</p>
+      <button class="btn btn-primary" onclick="pdHide()">お題を隠して、端末を置く</button>
+    </div>`;
+  }
+  if(s.sub === 'hold'){
+    return `
+    <div class="panel callwrap">
+      <div class="eyebrow">お題は非表示です</div>
+      <div class="who">端末を全員に見える場所に置いてください</div>
+      <div class="msg">${san(p)}が「この中で1番〇〇そうな人」の名前を言いました。<br>ボタンを押すと、1/2の確率でお題が公開されます。(押す人は誰でも構いません)</div>
+      <button class="btn btn-danger" onclick="pdFlip()">運命のボタンを押す</button>
+    </div>`;
+  }
+  // result
+  const isLast = s.turns !== 0 && s.turn >= s.turns;
+  const next = isLast ? null : s.players[s.nextIdx];
+  return `
+  <div class="panel callwrap">
+    <div class="eyebrow">${pdTurnLabel()}</div>
+    ${s.revealed ? `
+      <div class="roleicon pop-in">🔓</div>
+      <div class="who" style="font-size:22px;">偏見が暴かれた!</div>
+      <div class="small">この中で1番…</div>
+      <div class="rolename pop-in" style="font-size:28px; line-height:1.5; margin:8px 0 14px;">「${escapeHtml(s.prompt)}」</div>
+    ` : `
+      <div class="roleicon pop-in">🕳️</div>
+      <div class="who" style="font-size:22px;">偏見は闇に葬り去られた…</div>
+      <div class="msg">お題は誰にも明かされません。</div>
+    `}
+    ${isLast
+      ? `<button class="btn btn-primary" onclick="pdNext()">結果を見る</button>`
+      : `<div class="msg" style="margin-bottom:14px;">次は${san(next)}の番です。端末を${san(next)}に渡してください。</div>
+         <button class="btn btn-primary" onclick="pdNext()">次のプレイヤーへ</button>`}
+    ${isLast ? '' : `<button class="btn btn-sub" onclick="pdEnd()">ここでゲームを終了する</button>`}
+  </div>`;
+}
+function pdShowPrompt(){ pdState.sub = 'prompt'; render(); }
+function pdHide(){ pdState.sub = 'hold'; render(); }
+function pdFlip(){
+  const s = pdState;
+  s.revealed = Math.random() < 0.5;
+  s.history.push({turn:s.turn, player:s.players[s.curIdx].name, prompt:s.prompt, revealed:s.revealed});
+  // 結果画面に「次の人」の名前を出すため、次の手番をここで決めておく
+  const isLast = s.turns !== 0 && s.turn >= s.turns;
+  s.nextIdx = isLast ? null : nextPdPlayerIdx(s.turn + 1);
+  s.sub = 'result';
+  render();
+}
+function pdNext(){
+  const s = pdState;
+  if(s.turns !== 0 && s.turn >= s.turns){ pdEnd(); return; }
+  beginPdTurn();
+}
+function pdEnd(){ pdState.nextIdx = null; pdState.phase = 'end'; render(); }
+
+/* ---- end ---- */
+function screenPdEnd(){
+  const s = pdState;
+  const shown = s.history.filter(h=>h.revealed);
+  const buried = s.history.length - shown.length;
+  const rows = shown.map(h=>`
+    <div class="resultrow"><span class="rname" style="font-size:14px;">「${escapeHtml(h.prompt)}」</span><span class="small">${escapeHtml(h.player)}さん</span></div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow center" style="text-align:center;">ゲーム終了</div>
+    <h1 class="center" style="text-align:center;">お疲れさまでした</h1>
+    <p class="lead center" style="text-align:center;">お題 ${s.history.length}個:公開 ${shown.length}個 / 闇に葬られた ${buried}個</p>
+    ${shown.length ? `<h3>公開されたお題</h3><div class="resultlist">${rows}</div>` : '<p class="hint" style="text-align:center;">公開されたお題はありませんでした。</p>'}
+    <button class="btn btn-primary" onclick="startPd()">もう一度遊ぶ(同じ設定)</button>
+    <button class="btn btn-sub" onclick="pdBackToSetup()">設定に戻る</button>
+  </div>`;
+}
+function pdBackToSetup(){ pdState.phase = 'setup'; render(); }
 
 
 render();
