@@ -573,21 +573,25 @@ function startGame(){
   }
   state.setupError = null;
 
-  // 人狼陣営の役職は、条件を満たす参加者の中からランダムに割り当てる
-  const pool = [...eligible];
-  shuffle(pool);
-  const roles = new Array(n).fill(null);
-  wolfSideRoles.forEach((role, k)=>{ roles[pool[k]] = role; });
-
-  // 残りの役職(占い師・狩人・社長・村人)を、空いている席にランダムに割り当てる
-  const others = [];
-  for(let i=0;i<s;i++) others.push('seer');
-  for(let i=0;i<h;i++) others.push('hunter');
-  for(let i=0;i<pr;i++) others.push('president');
-  while(others.length < n - wolfSideRoles.length) others.push('villager');
-  shuffle(others);
-  let k2 = 0;
-  for(let i=0;i<n;i++){ if(roles[i] === null) roles[i] = others[k2++]; }
+  // 配役を1回分つくる(人狼陣営は条件を満たす参加者から、残りは空き席へランダムに)
+  const assignOnce = () => {
+    const pool = [...eligible];
+    shuffle(pool);
+    const r = new Array(n).fill(null);
+    wolfSideRoles.forEach((role, k)=>{ r[pool[k]] = role; });
+    const others = [];
+    for(let i=0;i<s;i++) others.push('seer');
+    for(let i=0;i<h;i++) others.push('hunter');
+    for(let i=0;i<pr;i++) others.push('president');
+    while(others.length < n - wolfSideRoles.length) others.push('villager');
+    shuffle(others);
+    let k2 = 0;
+    for(let i=0;i<n;i++){ if(r[i] === null) r[i] = others[k2++]; }
+    return r;
+  };
+  // 同じ人が同じ特別役を3連続で引かないようにする
+  const roles = drawRolesWithRunLimit(assignOnce, jinroRoleHistory, names, JINRO_MAX_RUN);
+  recordRoles(jinroRoleHistory, names, roles);
 
   state.players = names.map((nm,i)=>({id:i, name: nm, role: roles[i], alive:true, deathCause:null}));
   state.log = [];
@@ -598,6 +602,40 @@ function startGame(){
   state.screen = 'confirm';
   render();
 }
+/* 役職の連続防止(同じ人が同じ役を続けて引かないようにする)
+   history[名前] = これまでの役職(新しいものが後ろ)。maxRun[役職] = 連続できる最大回数(未指定の役職は無制限)。
+   ・毎回の配役を無作為に作り、制限に触れたら引き直す(制限を満たす配役の中では一様なランダム)
+   ・制限を満たす配役が作れない場合(人数・役職構成の都合)は、制限を緩めて最後に引いた配役を使う */
+function runExceeded(hist, role, maxRun){
+  if(!maxRun) return false;
+  const h = hist || [];
+  if(h.length < maxRun) return false;
+  return h.slice(-maxRun).every(r => r === role);
+}
+function violatesRunRule(history, names, roles, maxRunMap){
+  return names.some((nm,i)=> runExceeded(history[nm], roles[i], maxRunMap[roles[i]]));
+}
+function drawRolesWithRunLimit(drawFn, history, names, maxRunMap, tries){
+  let last = null;
+  for(let t=0; t<(tries||1000); t++){
+    last = drawFn();
+    if(!violatesRunRule(history, names, last, maxRunMap)) return last;
+  }
+  return last;
+}
+function recordRoles(history, names, roles){
+  names.forEach((nm,i)=>{
+    (history[nm] = history[nm] || []).push(roles[i]);
+    if(history[nm].length > 6) history[nm].shift();
+  });
+}
+// ゲームごとの履歴(ページを開いている間は保持)と、連続できる最大回数
+const jinroRoleHistory = {};
+const JINRO_MAX_RUN = {wolf:2, seer:2, hunter:2, president:2, madman:2, paparazzi:2};   // 村人は対象外(多数派のため)
+const insiderRoleHistory = {};
+const INSIDER_MAX_RUN = {master:1, insider:2};                                           // マスターは2連続不可、インサイダーは3連続不可(市民は対象外)
+const wwRoleHistory = {};
+const WW_MAX_RUN = {wolf:2};                                                             // ウルフは3連続不可(市民は対象外)
 function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j = Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -1692,10 +1730,18 @@ function pickInsiderWord(genreKey){
 function startInsider(){
   const s = insiderState;
   const players = s.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), role:'citizen'}));
-  const order = players.map((_,i)=>i);
-  shuffle(order);
-  players[order[0]].role = 'master';
-  players[order[1]].role = 'insider';
+  // マスターは2連続、インサイダーは3連続で同じ人にならないようにする
+  const names = players.map(p=>p.name);
+  const roles = drawRolesWithRunLimit(()=>{
+    const order = players.map((_,i)=>i);
+    shuffle(order);
+    const r = new Array(players.length).fill('citizen');
+    r[order[0]] = 'master';
+    r[order[1]] = 'insider';
+    return r;
+  }, insiderRoleHistory, names, INSIDER_MAX_RUN);
+  players.forEach((p,i)=>{ p.role = roles[i]; });
+  recordRoles(insiderRoleHistory, names, roles);
   const pick = pickInsiderWord(s.genre);
   s.players = players;
   s.word = pick.w;
@@ -2030,9 +2076,17 @@ function pickWwPair(genreKey){
 function startWw(){
   const s = wwState;
   const players = s.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1)), wolf:false}));
-  const order = players.map((_,i)=>i);
-  shuffle(order);
-  for(let k=0;k<s.wolves;k++) players[order[k]].wolf = true;
+  // ウルフは同じ人が3連続にならないようにする
+  const names = players.map(p=>p.name);
+  const roles = drawRolesWithRunLimit(()=>{
+    const order = players.map((_,i)=>i);
+    shuffle(order);
+    const r = new Array(players.length).fill('citizen');
+    for(let k=0;k<s.wolves;k++) r[order[k]] = 'wolf';
+    return r;
+  }, wwRoleHistory, names, WW_MAX_RUN);
+  players.forEach((p,i)=>{ p.wolf = roles[i] === 'wolf'; });
+  recordRoles(wwRoleHistory, names, roles);
   const pair = pickWwPair(s.genre);
   s.players = players;
   s.citizenWord = pair.citizen;
