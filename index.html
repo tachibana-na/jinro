@@ -143,6 +143,18 @@ input[type=text]:focus{outline:1px solid var(--mist);}
 .badge.paparazzi{color:#ffb3a4; border-color:rgba(214,68,48,0.5); background:rgba(214,68,48,0.1);}
 .lockedgrid{opacity:.45; pointer-events:none;}
 .lockhint{color:var(--amber);}
+select{
+  width:100%; padding:12px 14px; border-radius:10px; border:1px solid var(--line);
+  background:var(--bg-panel-lighter); color:var(--silver); font-size:15px; font-family:var(--font-body);
+}
+.itolist{display:flex; flex-direction:column; gap:8px; margin:8px 0;}
+.itorow{display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:12px; border:1px solid var(--line); background:var(--bg-panel-lighter);}
+.itorank{display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:rgba(205,214,229,0.12); font-size:12px; color:var(--silver-dim); font-family:var(--font-display);}
+.itobtn{width:44px; height:44px; border-radius:50%; border:1px solid var(--line); background:var(--bg-panel); color:var(--silver); font-size:18px; cursor:pointer; padding:0;}
+.itobtn:disabled{opacity:.25; cursor:default;}
+.itonum{font-family:var(--font-display); font-size:22px; color:var(--silver);}
+.resultrow.good{border-color:rgba(111,207,151,0.5); background:rgba(111,207,151,0.08);}
+.resultrow.bad{border-color:rgba(214,68,48,0.6); background:rgba(214,68,48,0.12);}
 
 .chipwrap{display:flex; flex-wrap:wrap; gap:8px; margin:14px 0;}
 .chip{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; background:var(--bg-panel-lighter); border:1px solid var(--line); font-size:13px;}
@@ -279,6 +291,7 @@ function render(){
   else if(appMode === 'talk_theme'){ html = renderTalkThemeScreen(); }
   else if(appMode === 'insider'){ html = renderInsiderScreen(); }
   else if(appMode === 'wordwolf'){ html = renderWwScreen(); }
+  else if(appMode === 'ito'){ html = renderItoScreen(); }
   else if(appMode === 'survey_choice'){ html = renderSurveyChoiceScreen(); }
   else if(appMode === 'survey_free'){ html = renderSurveyFreeScreen(); }
   else { html = renderJinroScreen() + renderLogPanel(); }
@@ -310,6 +323,7 @@ function screenTop(){
     <button class="btn btn-primary menubtn" onclick="enterLottery()">🎯 抽選<span class="sub">入力した候補からランダムに選ぶ・チーム分けも可能</span></button>
     <button class="btn btn-primary menubtn" onclick="enterInsider()">🕵️ インサイダーゲーム<span class="sub">お題を当てながら、お題を知る裏切り者を探す</span></button>
     <button class="btn btn-primary menubtn" onclick="enterWw()">🎭 ワードウルフ<span class="sub">少し違うお題を持つウルフを会話で探す</span></button>
+    <button class="btn btn-primary menubtn" onclick="enterIto()">🔢 価値観合わせゲーム<span class="sub">お題に沿って数字の大きい順に並べる(ito風)</span></button>
     <button class="btn btn-primary menubtn" onclick="enterTalkTheme()">💬 トークテーマ<span class="sub">会話のきっかけになるお題をランダムに引く</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyChoice()">🗳️ アンケート(選択式)<span class="sub">選択肢から選んでもらい、匿名で集計</span></button>
     <button class="btn btn-primary menubtn" onclick="enterSurveyFree()">✏️ アンケート(自由入力)<span class="sub">自由記述で回答してもらい、匿名で一覧表示</span></button>
@@ -2168,6 +2182,272 @@ function screenWwResult(){
   </div>`;
 }
 function wwBackToSetup(){ wwState.phase = 'setup'; render(); }
+
+
+/* ==================== ITO (価値観合わせゲーム) ==================== */
+const ITO_TOPICS = ['強そうなもの','かわいいもの','おいしい食べ物','怖いもの','ワクワクすること','もらってうれしいもの','重いもの','値段が高いもの','有名なもの(知名度)','人気のあるもの','熱いもの','速いもの','かっこいいもの','眠くなるもの','面倒くさいこと','緊張すること','恥ずかしいこと','お金がかかること','行ってみたい場所','住んでみたい街','大きいもの','ありがたいもの','痛いこと','うれしい休日の過ごし方','デートで行きたい場所','朝に食べたいもの','夜に食べたいもの','旅行で外せないもの','学生時代の思い出の濃さ','好きになる人の条件'];
+let itoUsedTopics = new Set();
+
+function freshIto(){
+  const n = 4;
+  return {
+    phase:'setup', n, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
+    topicChoice:'random', freeTopic:'',
+    topic:'', players:[], numbers:{},
+    idx:0, subPhase:'call',
+    order:[], confirmEnd:false,
+    peekId:null, peekStep:'pick'
+  };
+}
+let itoState = freshIto();
+function enterIto(){ appMode = 'ito'; itoState = freshIto(); render(); }
+function renderItoScreen(){
+  const s = itoState;
+  if(s.phase === 'setup') return screenItoSetup();
+  if(s.phase === 'confirm') return screenItoConfirm();
+  if(s.phase === 'arrange') return screenItoArrange();
+  if(s.phase === 'peek') return screenItoPeek();
+  return screenItoResult();
+}
+function keepScroll(fn){ const y = window.scrollY; fn(); window.scrollTo(0, y); }
+
+/* ---- setup ---- */
+function screenItoSetup(){
+  const s = itoState;
+  const opts = [
+    `<option value="random" ${s.topicChoice==='random'?'selected':''}>おまかせ(ランダム)</option>`,
+    `<option value="free" ${s.topicChoice==='free'?'selected':''}>自由入力</option>`,
+    ...ITO_TOPICS.map((t,i)=>`<option value="${i}" ${String(s.topicChoice)===String(i)?'selected':''}>${escapeHtml(t)}</option>`)
+  ].join('');
+  const nameRows = s.names.map((nm,i)=>`
+    <div class="nameitem"><div class="idx">${i+1}</div><input type="text" value="${escapeHtml(nm)}" oninput="setItoName(${i}, this.value)"></div>`).join('');
+  const canStart = s.topicChoice !== 'free' || s.freeTopic.trim();
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow">価値観合わせゲーム</div>
+    <h1>ゲームの準備</h1>
+    <p class="lead">全員に1〜100の数字が1つずつ配られます。数字は見せずに、お題に沿った言葉で自分の数字の大きさを表現し、数字の大きい順にプレイヤーを並べられたら成功です。</p>
+
+    <label>参加人数(2〜20人)</label>
+    <div class="stepper">
+      <button onclick="changeItoN(-1)">−</button>
+      <div class="val">${s.n}</div>
+      <button onclick="changeItoN(1)">+</button>
+    </div>
+
+    <label>お題</label>
+    <select onchange="setItoTopicChoice(this.value)">${opts}</select>
+    ${s.topicChoice==='free' ? `<input type="text" style="margin-top:10px;" value="${escapeHtml(s.freeTopic)}" oninput="setItoFree(this.value)" placeholder="例:かわいいもの">` : ''}
+
+    <label>参加者の名前</label>
+    <div class="namegrid">${nameRows}</div>
+
+    <button class="btn btn-primary" id="itoStartBtn" ${canStart?'':'disabled style="opacity:.4"'} onclick="startIto()">ゲーム開始</button>
+  </div>`;
+}
+function setItoName(i,v){ itoState.names[i] = v; }
+function setItoTopicChoice(v){ itoState.topicChoice = v; render(); }
+function setItoFree(v){
+  itoState.freeTopic = v;
+  const el = document.getElementById('itoStartBtn');
+  if(el){ const ok = !!v.trim(); el.disabled = !ok; el.style.opacity = ok ? '1' : '.4'; }
+}
+function changeItoN(d){
+  const s = itoState;
+  const n = Math.min(20, Math.max(2, s.n + d));
+  if(n === s.n) return;
+  s.n = n;
+  if(n > s.names.length){ while(s.names.length < n) s.names.push('プレイヤー'+(s.names.length+1)); }
+  else s.names = s.names.slice(0, n);
+  render();
+}
+function pickItoTopic(){
+  const pool = ITO_TOPICS.filter(t=>!itoUsedTopics.has(t));
+  const cands = pool.length ? pool : (itoUsedTopics.clear(), ITO_TOPICS);
+  const t = cands[Math.floor(Math.random()*cands.length)];
+  itoUsedTopics.add(t);
+  return t;
+}
+function startIto(){
+  const s = itoState;
+  if(s.topicChoice === 'free' && !s.freeTopic.trim()) return;
+  // 1〜100から重複なしでランダムに配る(同じ数字は出ない)
+  const nums = Array.from({length:100}, (_,i)=>i+1);
+  shuffle(nums);
+  s.players = s.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1))}));
+  s.numbers = {};
+  s.players.forEach((p,i)=>{ s.numbers[p.id] = nums[i]; });
+  s.topic = s.topicChoice === 'random' ? pickItoTopic()
+          : s.topicChoice === 'free' ? s.freeTopic.trim()
+          : ITO_TOPICS[Number(s.topicChoice)];
+  s.order = s.players.map(p=>p.id);
+  s.idx = 0; s.subPhase = 'call'; s.confirmEnd = false; s.peekId = null; s.peekStep = 'pick';
+  s.phase = 'confirm';
+  render();
+}
+
+/* ---- 数字の確認(1人ずつ端末を回す) ---- */
+function screenItoConfirm(){
+  const s = itoState;
+  const p = s.players[s.idx];
+  const isLast = s.idx === s.players.length - 1;
+  const eyebrow = `<div class="eyebrow">数字の確認 ${s.idx+1} / ${s.players.length}</div>`;
+  if(s.subPhase === 'call'){
+    return callScreen(eyebrow, p, 'itoReveal()', '数字を確認する');
+  }
+  if(s.subPhase === 'reveal'){
+    return `
+    <div class="panel">
+      <div class="eyebrow">${san(p)}の数字</div>
+      <div class="card3d">
+        <div class="cardface">
+          <div class="small">お題:${escapeHtml(s.topic)}</div>
+          <div class="rolename" style="font-size:72px; margin:10px 0;">${s.numbers[p.id]}</div>
+          <div class="roledesc">数字が大きいほど、お題に強く当てはまります。数字は誰にも見せないでください。</div>
+        </div>
+      </div>
+      ${isLast ? `<p class="hint">このボタンを押すと並べ替え画面に進みます。端末は全員に見える場所に置いてください。</p>` : ''}
+      <button class="btn btn-primary" onclick="itoDone()">${san(p)}:確認した${isLast ? '(並べ替えへ)' : ''}</button>
+    </div>`;
+  }
+  const next = s.players[s.idx + 1];
+  return passScreen('<div class="eyebrow">受け渡し</div>', p, next, 'itoAdvance()');
+}
+function itoReveal(){ itoState.subPhase = 'reveal'; render(); }
+function itoDone(){
+  const s = itoState;
+  if(s.idx === s.players.length - 1){
+    s.phase = 'arrange';
+    render();
+  } else {
+    s.subPhase = 'pass';
+    render();
+  }
+}
+function itoAdvance(){ const s = itoState; s.idx += 1; s.subPhase = 'call'; render(); }
+
+/* ---- 並べ替え(数字は表示しない) ---- */
+function screenItoArrange(){
+  const s = itoState;
+  const rows = s.order.map((id,i)=>{
+    const p = s.players[id];
+    return `
+    <div class="itorow">
+      <span class="itorank">${i+1}</span>
+      <span class="rname" style="flex:1;">${escapeHtml(p.name)}</span>
+      <button class="itobtn" ${i===0?'disabled':''} onclick="moveIto(${i},-1)">↑</button>
+      <button class="itobtn" ${i===s.order.length-1?'disabled':''} onclick="moveIto(${i},1)">↓</button>
+    </div>`;
+  }).join('');
+  return `
+  <div class="panel">
+    <div class="eyebrow">並べ替え</div>
+    <div class="small">お題</div>
+    <h1 style="margin-top:2px;">${escapeHtml(s.topic)}</h1>
+    <p class="hint">お題に沿った言葉で自分の数字の大きさを伝え合い、数字が<strong>大きい順</strong>になるように、上から並べてください。</p>
+    <div class="small" style="text-align:center; margin-top:14px;">▲ 数字が大きい</div>
+    <div class="itolist">${rows}</div>
+    <div class="small" style="text-align:center; margin-bottom:10px;">▼ 数字が小さい</div>
+    <button class="btn" onclick="itoPeekOpen()">自分の数字をもう一度確認する</button>
+    ${s.confirmEnd ? `
+      <div class="hint" style="margin-top:14px;">この並びで結果を確認します。よろしいですか?</div>
+      <button class="btn btn-danger" onclick="itoShowResult()">結果を確認する</button>
+      <button class="btn btn-sub" onclick="itoCancelEnd()">並べ替えに戻る</button>
+    ` : `
+      <button class="btn btn-primary" onclick="itoAskEnd()">結果を確認する</button>
+    `}
+  </div>`;
+}
+function moveIto(i, d){
+  const s = itoState;
+  const j = i + d;
+  if(j < 0 || j >= s.order.length) return;
+  [s.order[i], s.order[j]] = [s.order[j], s.order[i]];
+  s.confirmEnd = false;
+  keepScroll(()=>render());
+}
+function itoAskEnd(){ itoState.confirmEnd = true; keepScroll(()=>render()); }
+function itoCancelEnd(){ itoState.confirmEnd = false; keepScroll(()=>render()); }
+
+/* ---- 数字の再確認(プレイヤーを選ぶ → 本人が確認 → 並べ替えに戻る) ---- */
+function itoPeekOpen(){ const s = itoState; s.phase = 'peek'; s.peekStep = 'pick'; s.peekId = null; s.confirmEnd = false; render(); }
+function itoPeekBack(){ const s = itoState; s.phase = 'arrange'; s.peekId = null; render(); }
+function itoPeekSelect(id){ const s = itoState; s.peekId = id; s.peekStep = 'call'; render(); }
+function itoPeekReveal(){ itoState.peekStep = 'reveal'; render(); }
+function itoPeekRepick(){ const s = itoState; s.peekId = null; s.peekStep = 'pick'; render(); }
+function screenItoPeek(){
+  const s = itoState;
+  if(s.peekStep === 'pick'){
+    const rows = s.players.map(p=>`<div class="pbtn" onclick="itoPeekSelect(${p.id})"><span>${escapeHtml(p.name)}</span></div>`).join('');
+    return `
+    <div class="panel">
+      <div class="eyebrow">数字の確認</div>
+      <h3>数字を確認する人を選んでください</h3>
+      <p class="hint">選んだ人に端末を渡し、本人だけが数字を見ます。確認したあとは並べ替え画面に戻ります。</p>
+      <div class="playergrid">${rows}</div>
+      <button class="btn btn-sub" onclick="itoPeekBack()">やめて並べ替えに戻る</button>
+    </div>`;
+  }
+  const p = s.players[s.peekId];
+  if(s.peekStep === 'call'){
+    return `
+    <div class="panel callwrap">
+      <div class="eyebrow">数字の確認</div>
+      <div class="who">${san(p)}の番です</div>
+      <div class="msg">${san(p)}:端末を受け取ったら、周りの人に画面が見えないようにしてから、${san(p)}自身がボタンを押してください。</div>
+      <button class="btn btn-primary" onclick="itoPeekReveal()">数字を確認する</button>
+      <button class="btn btn-sub" onclick="itoPeekRepick()">人を選び直す</button>
+    </div>`;
+  }
+  return `
+  <div class="panel">
+    <div class="eyebrow">${san(p)}の数字</div>
+    <div class="card3d">
+      <div class="cardface">
+        <div class="small">お題:${escapeHtml(s.topic)}</div>
+        <div class="rolename" style="font-size:72px; margin:10px 0;">${s.numbers[p.id]}</div>
+        <div class="roledesc">数字は誰にも見せないでください。</div>
+      </div>
+    </div>
+    <p class="hint">このボタンを押すと並べ替え画面に戻ります。端末は全員に見える場所に置いてください。</p>
+    <button class="btn btn-primary" onclick="itoPeekBack()">${san(p)}:確認した(並べ替えに戻る)</button>
+  </div>`;
+}
+
+/* ---- 結果 ---- */
+function itoShowResult(){ itoState.phase = 'result'; render(); }
+function screenItoResult(){
+  const s = itoState;
+  const nums = s.order.map(id=>s.numbers[id]);
+  // 大きい順(厳密に減少)なら成功。前の人より大きい数字が来た行を「違う」として示す
+  const bad = s.order.map((id,i)=> i>0 && s.numbers[id] > s.numbers[s.order[i-1]]);
+  const ok = !bad.some(Boolean) && nums.every((v,i)=> i===0 || nums[i-1] > v);
+  const rows = s.order.map((id,i)=>`
+    <div class="resultrow ${bad[i] ? 'bad' : (ok ? 'good' : '')}">
+      <span><span class="itorank">${i+1}</span> <span class="rname">${escapeHtml(s.players[id].name)}</span></span>
+      <span class="itonum">${s.numbers[id]}</span>
+    </div>`).join('');
+  const correct = [...s.order].sort((a,b)=>s.numbers[b]-s.numbers[a]);
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="backToTop()">← トップに戻る</button>
+    <div class="eyebrow center" style="text-align:center;">結果(お題:${escapeHtml(s.topic)})</div>
+    <h1 class="center" style="text-align:center; font-size:40px; color:${ok?'var(--emerald)':'#ffb3a4'};">${ok ? '🎉 成功!' : '💥 失敗…'}</h1>
+    <p class="lead center" style="text-align:center;">${ok ? '数字の大きい順に並べられました。' : '数字の大きい順になっていません。'}</p>
+    <div class="small" style="text-align:center;">▲ 並べた順(上が大きい)</div>
+    <div class="resultlist">${rows}</div>
+    ${ok ? '' : `
+      <div class="divider"></div>
+      <h3>正しい順番</h3>
+      <div class="resultlist">${correct.map((id,i)=>`
+        <div class="resultrow"><span><span class="itorank">${i+1}</span> <span class="rname">${escapeHtml(s.players[id].name)}</span></span><span class="itonum">${s.numbers[id]}</span></div>`).join('')}</div>
+    `}
+    <button class="btn btn-primary" onclick="startIto()">もう一度遊ぶ(同じ設定)</button>
+    <button class="btn btn-sub" onclick="itoBackToSetup()">設定に戻る</button>
+  </div>`;
+}
+function itoBackToSetup(){ itoState.phase = 'setup'; render(); }
 
 
 render();
