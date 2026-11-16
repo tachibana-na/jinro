@@ -153,6 +153,12 @@ select{
 .itobtn{width:44px; height:44px; border-radius:50%; border:1px solid var(--line); background:var(--bg-panel); color:var(--silver); font-size:18px; cursor:pointer; padding:0;}
 .itobtn:disabled{opacity:.25; cursor:default;}
 .itonum{font-family:var(--font-display); font-size:22px; color:var(--silver);}
+.pdrow{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--bg-panel-lighter); margin-bottom:8px; cursor:pointer; font-size:14px; line-height:1.5;}
+.pdrow.off .pdtext{color:var(--silver-dim); text-decoration:line-through;}
+.sw{width:44px; height:26px; border-radius:999px; background:rgba(205,214,229,0.18); position:relative; flex-shrink:0; transition:background .15s;}
+.sw::after{content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:var(--silver); transition:left .15s;}
+.sw.on{background:var(--mist);}
+.sw.on::after{left:21px; background:#0a0f1c;}
 .resultrow.good{border-color:rgba(111,207,151,0.5); background:rgba(111,207,151,0.08);}
 .resultrow.bad{border-color:rgba(214,68,48,0.6); background:rgba(214,68,48,0.12);}
 
@@ -2521,7 +2527,7 @@ const PD_NORMAL = [
   '実は実家が太そうな人','実は芸能人の知り合いがいそうな人','実は海外に移住しそうな人','突然会社を辞めそうな人',
   '実は起業しそうな人','出世しそうな人','実は転職を繰り返していそうな人','仕事中にこっそりサボっていそうな人',
   '実は上司の悪口を言っていそうな人','実は隠れオタクそうな人','実はアイドルの追っかけをしていそうな人','実はナルシストそうな人',
-  '自分の写真を撮りまくっていそうな人','お酒を飲むと豹変しそうな人','二日酔いで仕事を休んだことがありそうな人','終電を逃しがちな人',
+  '自分の写真を撮りまくっていそうな人','お酒を飲むと豹変しそうな人','二日酔いで仕事を休んだことがありそうな人','終電を逃しそうな人',
   '遅刻の常習犯そうな人','約束をうっかり忘れそうな人','貸したものを返さなそうな人','割り勘で細かく計算しそうな人',
   '実はケチそうな人','奢られ慣れていそうな人','一人旅をしていそうな人','一人焼肉に通っていそうな人',
   'カラオケで熱唱しそうな人','一人カラオケによく行っていそうな人','ペットに話しかけすぎていそうな人','独り言が多そうな人',
@@ -2536,7 +2542,29 @@ const PD_NORMAL = [
   '実は動物に好かれそうな人','サウナにハマっていそうな人','実は料理が壊滅的そうな人','実は料理の腕を隠していそうな人',
   '実は貯金が多そうな人','実は投資で損をしていそうな人','実は副業をしていそうな人','実は転生ものの小説を読んでいそうな人',
   '実はドラマの結末を先に調べそうな人','実は嫉妬深そうな人','実は負けず嫌いそうな人','実は人見知りそうな人',
-  '実はクレーマーになりそうな人','実は親友に秘密を話していそうな人','実は自分に甘そうな人','実は人に言えない失敗談がありそうな人'
+  '実はクレーマーになりそうな人','実は親友に秘密を話していそうな人','実は自分に甘そうな人','実は人に言えない失敗談がありそうな人',
+  '実は人の顔と名前を覚えるのが苦手そうな人','実は電車で寝過ごしてよく降り過ごしていそうな人','実は忘れ物が多そうな人','実は財布を落としたことがありそうな人',
+  '実は鍵をよく失くしていそうな人','コンビニで余計なものを買ってしまいそうな人','ネットショッピングで衝動買いしていそうな人','サブスクを契約しすぎていそうな人',
+  '使っていないジムの会員になっていそうな人','積読(読んでいない本)が多そうな人','掃除を後回しにしていそうな人','洗濯物を溜め込んでいそうな人',
+  '冷蔵庫に賞味期限切れのものが入っていそうな人','自炊をほとんどしていなさそうな人','カップ麺をよく食べていそうな人','朝食を食べなさそうな人',
+  'コーヒーを飲みすぎていそうな人','夜中にこっそりお菓子を食べていそうな人','ラーメンの汁を全部飲みそうな人','焼肉で仕切りたがりそうな人',
+  '飲み会で仕切りたがりそうな人','飲み会で最後まで残っていそうな人','飲み会の途中でこっそり帰りそうな人','二次会に必ず行きたがりそうな人',
+  '飲み会で寝てしまいそうな人','酔って記憶をなくしそうな人','酔うと泣き出しそうな人','酔うと説教を始めそうな人',
+  '酔うと同じ話を繰り返しそうな人','酔うと電話をかけまくりそうな人','実は人前で話すのが苦手そうな人','緊張すると早口になりそうな人',
+  '褒められると調子に乗りそうな人','叱られるとすぐ落ち込みそうな人','謝るのが苦手そうな人','怒ると一番怖そうな人',
+  '実は頑固そうな人','実は優柔不断そうな人','レストランでメニューを決められなさそうな人','押しに弱そうな人',
+  '断れずに頼みごとを引き受けてしまいそうな人','実はお節介を焼きたがりそうな人','実は噂話が好きそうな人','実は秘密を守れなさそうな人',
+  '実は口が堅そうな人','動画サイトを何時間も見続けていそうな人','深夜にこっそりゲームをしていそうな人','アニメを一気見していそうな人',
+  '漫画を大量に持っていそうな人','推しのグッズを部屋に飾っていそうな人','実はコレクションが多そうな人','昔のものを捨てられなさそうな人',
+  '休日はずっと寝ていそうな人','休日に一人でカフェに行っていそうな人','旅行の計画を細かく立てそうな人','旅行先で迷子になりそうな人',
+  '海外旅行で財布をなくしそうな人','飛行機が怖そうな人','船酔いしそうな人','絶叫マシンが苦手そうな人',
+  'お化け屋敷で叫びそうな人','ホラー映画を好んで見ていそうな人','昔の恋愛を美化していそうな人','告白されたら断れなさそうな人',
+  '告白する勇気がなさそうな人','一目惚れしやすそうな人','恋人に依存しやすそうな人','恋人の携帯をチェックしそうな人',
+  'デートの計画を丸投げしそうな人','結婚式の幹事を頼まれそうな人','親に頭が上がらなさそうな人','おばあちゃん子そうな人',
+  'きょうだいと仲が悪そうな人','暗算が得意そうな人','漢字が苦手そうな人','英語がペラペラそうな人',
+  '敬語が苦手そうな人','字が汚そうな人','字が驚くほどきれいそうな人','絵が壊滅的に下手そうな人',
+  '実は歌がうまそうな人','実は音痴そうな人','ダンスが得意そうな人','楽器が弾けそうな人',
+  'スポーツで全国大会に出たことがありそうな人','実は学生時代に生徒会をやっていそうな人','実は学生時代に不良グループにいそうな人'
 ];
 const PD_ADULT = [
   '性欲が強そうな人','エッチが上手そうな人','ベッドの上でSっ気がありそうな人','ベッドの上でMっ気がありそうな人',
@@ -2554,7 +2582,23 @@ const PD_ADULT = [
   'エッチな夢を見ていそうな人','下ネタをよく言っていそうな人','下ネタに弱そうな人','ハプニングバーに行っていそうな人',
   '頭の中がエッチなことでいっぱいそうな人','誘われたら断れなさそうな人','友達と一線を越えそうな人','元恋人とよりを戻して夜を過ごしそうな人',
   '寝取られに興奮しそうな人','寝取りそうな人','エッチなことで人に言えない秘密がありそうな人','エッチの最中に変なクセがありそうな人',
-  '初デートで関係を持ちそうな人','結婚しても遊びそうな人','ハニートラップに引っかかりそうな人','夜の仕事に向いていそうな人'
+  '初デートで関係を持ちそうな人','結婚しても遊びそうな人','ハニートラップに引っかかりそうな人','夜の仕事に向いていそうな人',
+  '初体験が早そうな人','初体験が遅そうな人','1日に何度も求めそうな人','一晩に何回もできそうな人',
+  'エッチのあとすぐ寝そうな人','エッチのあとに語り出しそうな人','エッチの前にシャワーを浴びたがりそうな人','エッチのときに電気を消したがりそうな人',
+  'エッチのとき明るいままでも平気そうな人','エッチの最中に笑ってしまいそうな人','エッチの相性を重視しそうな人','体の相性で恋人を選びそうな人',
+  '下着にこだわりがありそうな人','ノーパンで過ごしたことがありそうな人','温泉で混浴に入ってみたがりそうな人','裸で寝ていそうな人',
+  '家では裸で過ごしていそうな人','露出に興味がありそうな人','見られるのが好きそうな人','匂いフェチそうな人',
+  '脚フェチそうな人','胸フェチそうな人','お尻フェチそうな人','手フェチそうな人',
+  'うなじフェチそうな人','ナース服やメイド服が好きそうな人','ボディタッチが多そうな人','スキンシップが好きそうな人',
+  '耳元でささやかれると弱そうな人','首筋が弱そうな人','ベッドでは別人になりそうな人','普段は真面目だけど夜は豹変しそうな人',
+  '普段は大人しいのに夜は積極的になりそうな人','一目惚れした相手とすぐ寝てしまいそうな人','合コンでお持ち帰りを狙っていそうな人','合コンで一番モテそうな人',
+  '合コンで一番ガツガツしていそうな人','合コンで連絡先を聞きまくりそうな人','友達の恋人を好きになってしまいそうな人','職場の人と秘密の関係になりそうな人',
+  '職場恋愛を隠し通していそうな人','元恋人と今も体の関係が続いていそうな人','複数の人と同時に付き合っていそうな人','二股をかけていそうな人',
+  '三股をかけていそうな人','浮気がバレても堂々としていそうな人','浮気を絶対にバレないようにしていそうな人','浮気されても許してしまいそうな人',
+  '寝取られたことがありそうな人','遊びで付き合っていそうな人','夜の街で声をかけられそうな人','風俗に興味はあるけど行けていなさそうな人',
+  '裏アカでエッチな投稿をしていそうな人','エッチな漫画や小説を読んでいそうな人','エッチな話になると急に饒舌になりそうな人','エッチな話題で顔が赤くなりそうな人',
+  'ムラムラしたら我慢できなさそうな人','ラブグッズをこっそり通販で買っていそうな人','エッチな話をしても動じなさそうな人','キスだけで満足しそうな人',
+  'エッチのときに主導権を握りたがりそうな人','エッチのときに相手に任せたがりそうな人','エッチのあとに連絡が来なくなりそうな人','一夜限りの関係を何度も繰り返していそうな人'
 ];
 const PD_CONTENT = {
   normal: {label:'通常のみ(下ネタなし)'},
@@ -2564,13 +2608,29 @@ const PD_CONTENT = {
 const PD_TURN_OPTIONS = [5,10,20,30,50,0];   // 0 = エンドレス
 let pdUsedPrompts = new Set();
 
+/* お題のオン/オフ設定。オフにしたお題の文言を保存する(ブラウザに保存。使えない環境ではこのページを開いている間だけ有効) */
+const PD_STORAGE_KEY = 'pdDisabledPrompts_v1';
+let pdDisabled = { normal:new Set(), adult:new Set() };
+let pdStorageOk = true;
+function loadPdDisabled(){
+  try{
+    const raw = localStorage.getItem(PD_STORAGE_KEY);
+    if(raw){ const o = JSON.parse(raw); pdDisabled.normal = new Set(o.normal || []); pdDisabled.adult = new Set(o.adult || []); }
+  }catch(e){ pdStorageOk = false; }
+}
+function savePdDisabled(){
+  try{ localStorage.setItem(PD_STORAGE_KEY, JSON.stringify({normal:[...pdDisabled.normal], adult:[...pdDisabled.adult]})); }
+  catch(e){ pdStorageOk = false; }
+}
+loadPdDisabled();
+
 function freshPd(){
   const n = 6;
   return {
     phase:'setup', n, names: Array.from({length:n}, (_,i)=>'プレイヤー'+(i+1)),
     order:'seq', content:'normal', turns:10,
     players:[], turn:0, curIdx:0, sub:'call', prompt:'', revealed:false,
-    bag:[], lastIdx:null, history:[]
+    bag:[], lastIdx:null, history:[], promptTab:'normal'
   };
 }
 let pdState = freshPd();
@@ -2579,6 +2639,7 @@ function renderPdScreen(){
   const s = pdState;
   if(s.phase === 'setup') return screenPdSetup();
   if(s.phase === 'play') return screenPdPlay();
+  if(s.phase === 'prompts') return screenPdPrompts();
   return screenPdEnd();
 }
 
@@ -2606,11 +2667,15 @@ function screenPdSetup(){
 
     <label>手番</label>
     <div class="chipwrap">${orderChips}</div>
-    <p class="hint">${s.order==='seq' ? '名前の並び順に回します。' : '毎回ランダムに決まります(全員が1巡するまで同じ人は出ません)。'}</p>
+    <p class="hint">${s.order==='seq' ? '名前の並び順に回します。' : '毎回、完全にランダムに決まります(同じ人が続けて当たることもあります)。'}</p>
 
     <label>お題の内容</label>
     <div class="chipwrap">${contentChips}</div>
     ${s.content!=='normal' ? `<p class="errtext" style="margin-top:0;">※ 直接的な性的表現を含みます。参加者全員の同意のうえで選んでください。</p>` : ''}
+
+    <p class="hint">出題されるお題:${pdPool(s.content).length}個
+      ${pdPool(s.content).length === 0 ? '<span class="errtext">(オンのお題がありません。お題設定でオンにしてください)</span>' : ''}</p>
+    <button class="btn" onclick="pdOpenPrompts()">お題設定(お題ごとにオン/オフ)</button>
 
     <label>お題を出す数(ターン数)</label>
     <div class="chipwrap">${turnChips}</div>
@@ -2618,7 +2683,7 @@ function screenPdSetup(){
     <label>参加者の名前</label>
     <div class="namegrid">${nameRows}</div>
 
-    <button class="btn btn-primary" onclick="startPd()">ゲーム開始</button>
+    <button class="btn btn-primary" ${pdPool(s.content).length===0 ? 'disabled style="opacity:.4"' : ''} onclick="startPd()">ゲーム開始</button>
   </div>`;
 }
 function setPdOrder(k){ pdState.order = k; render(); }
@@ -2634,8 +2699,10 @@ function changePdN(d){
   else s.names = s.names.slice(0, n);
   render();
 }
+function pdEnabled(kind){ return (kind === 'normal' ? PD_NORMAL : PD_ADULT).filter(x=>!pdDisabled[kind].has(x)); }
 function pdPool(content){
-  return content === 'normal' ? PD_NORMAL : content === 'adult' ? PD_ADULT : [...PD_NORMAL, ...PD_ADULT];
+  // オンになっているお題だけが出題対象
+  return content === 'normal' ? pdEnabled('normal') : content === 'adult' ? pdEnabled('adult') : [...pdEnabled('normal'), ...pdEnabled('adult')];
 }
 function drawPdPrompt(){
   const s = pdState;
@@ -2649,21 +2716,12 @@ function drawPdPrompt(){
 function nextPdPlayerIdx(turnNumber){
   const s = pdState;
   if(s.order === 'seq') return (turnNumber - 1) % s.players.length;
-  // ランダム: 全員が1巡するまで同じ人は出ない。巡の切れ目で同じ人が続かないようにする
-  if(s.bag.length === 0){
-    s.bag = s.players.map((_,i)=>i);
-    shuffle(s.bag);
-    if(s.players.length > 1 && s.bag[0] === s.lastIdx){
-      const j = 1 + Math.floor(Math.random()*(s.bag.length-1));
-      [s.bag[0], s.bag[j]] = [s.bag[j], s.bag[0]];
-    }
-  }
-  const idx = s.bag.shift();
-  s.lastIdx = idx;
-  return idx;
+  // ランダム: 毎回完全にランダム(同じ人が続けて当たることもある)
+  return Math.floor(Math.random() * s.players.length);
 }
 function startPd(){
   const s = pdState;
+  if(pdPool(s.content).length === 0) return;
   s.players = s.names.map((nm,i)=>({id:i, name: nm.trim() || ('プレイヤー'+(i+1))}));
   s.turn = 0; s.bag = []; s.lastIdx = null; s.nextIdx = null; s.history = [];
   s.phase = 'play';
@@ -2763,6 +2821,59 @@ function pdNext(){
   beginPdTurn();
 }
 function pdEnd(){ pdState.nextIdx = null; pdState.phase = 'end'; render(); }
+
+/* ---- お題設定(お題ごとにオン/オフ) ---- */
+function pdOpenPrompts(){ pdState.phase = 'prompts'; render(); }
+function pdPromptsBack(){ pdState.phase = 'setup'; render(); }
+function setPdTab(k){ pdState.promptTab = k; render(); }
+function screenPdPrompts(){
+  const s = pdState;
+  const kind = s.promptTab;
+  const list = kind === 'normal' ? PD_NORMAL : PD_ADULT;
+  const dis = pdDisabled[kind];
+  const onCount = list.filter(x=>!dis.has(x)).length;
+  const tabs = [['normal','通常',PD_NORMAL],['adult','下ネタ',PD_ADULT]].map(([k,l,arr])=>{
+    const c = arr.filter(x=>!pdDisabled[k].has(x)).length;
+    return `<span class="chip pick ${kind===k?'sel':''}" onclick="setPdTab('${k}')">${l}(${c}/${arr.length})</span>`;
+  }).join('');
+  const rows = list.map((x,i)=>`
+    <div class="pdrow ${dis.has(x)?'off':''}" onclick="togglePdPrompt('${kind}', ${i}, this)">
+      <span class="pdtext">「${escapeHtml(x)}」</span><span class="sw ${dis.has(x)?'':'on'}"></span>
+    </div>`).join('');
+  return `
+  <div class="panel">
+    <button class="backlink" onclick="pdPromptsBack()">← ゲームの準備に戻る</button>
+    <div class="eyebrow">偏見暴露ゲーム</div>
+    <h1>お題設定</h1>
+    <p class="lead">出てほしくないお題はオフにしてください。オフのお題は出題されません。${pdStorageOk ? '設定はこの端末のブラウザに保存されます。' : '(この環境では保存できないため、ページを閉じるとリセットされます)'}</p>
+    <div class="chipwrap">${tabs}</div>
+    <p class="hint" id="pdOnCount">オン ${onCount} / ${list.length}個</p>
+    <div class="row" style="gap:8px; margin-bottom:12px;">
+      <button class="btn" style="margin:0;" onclick="pdSetAll('${kind}', true)">すべてオン</button>
+      <button class="btn" style="margin:0;" onclick="pdSetAll('${kind}', false)">すべてオフ</button>
+    </div>
+    <div>${rows}</div>
+    <button class="btn btn-primary" onclick="pdPromptsBack()">ゲームの準備に戻る</button>
+  </div>`;
+}
+function togglePdPrompt(kind, i, el){
+  const list = kind === 'normal' ? PD_NORMAL : PD_ADULT;
+  const x = list[i];
+  const dis = pdDisabled[kind];
+  if(dis.has(x)) dis.delete(x); else dis.add(x);
+  savePdDisabled();
+  const off = dis.has(x);
+  el.classList.toggle('off', off);
+  const sw = el.querySelector('.sw'); if(sw) sw.classList.toggle('on', !off);
+  const c = document.getElementById('pdOnCount');
+  if(c) c.textContent = `オン ${list.filter(y=>!dis.has(y)).length} / ${list.length}個`;
+}
+function pdSetAll(kind, on){
+  const list = kind === 'normal' ? PD_NORMAL : PD_ADULT;
+  if(on) pdDisabled[kind].clear(); else list.forEach(x=>pdDisabled[kind].add(x));
+  savePdDisabled();
+  keepScroll(()=>render());
+}
 
 /* ---- end ---- */
 function screenPdEnd(){
